@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Driver Login</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="card">
+  <h2>Driver Login</h2>
+  <input id="phone" placeholder="Phone Number">
+  <button onclick="sendOTP()">Send OTP</button>
+  <input id="otp" placeholder="Enter OTP">
+  <button onclick="login()">Login</button>
+</div>
+
+<form method="POST" id="loginForm" style="display:none">
+  <input name="phone" id="p">
+  <input name="otp" id="o">
+</form>
+
+<script>
+function sendOTP() {
+  const val = document.getElementById('phone').value;
+  if (!val) { alert('Enter phone number'); return; }
+  fetch("/send_otp", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({phone: val})
+  }).then(r => r.json()).then(d => alert(d.msg));
+}
+function login() {
+  const phoneEl = document.getElementById('phone');
+  const otpEl = document.getElementById('otp');
+  if (!phoneEl.value || !otpEl.value) { alert('Enter phone and OTP'); return; }
+  document.getElementById('p').value = phoneEl.value;
+  document.getElementById('o').value = otpEl.value;
+  document.getElementById('loginForm').submit();
+}
+</script>
+</body>
+</html>

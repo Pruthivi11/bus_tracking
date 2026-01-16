@@ -1,0 +1,22 @@
+body {
+  font-family: Arial;
+  background: #f2f2f2;
+  text-align: center;
+}
+.card {
+  background: white;
+  width: 320px;
+  margin: 20px auto;
+  padding: 20px;
+  border-radius: 8px;
+}
+input, select, button {
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+}
+#map {
+  width: 90%;
+  height: 440px;
+  margin: 20px auto;
+}

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Student Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+</head>
+<body>
+<div class="card">
+  <h2>Student Dashboard</h2>
+  <input id="rollNo" placeholder="Roll Number">
+  <input id="busNo" placeholder="Bus Number">
+  <button id="askPermission">Allow Location</button>
+  <button id="showMap">Show Map</button>
+</div>
+<div id="map" style="display:none; height:500px;"></div>
+<script src="/static/student.js"></script>
+</body>
+</html>
