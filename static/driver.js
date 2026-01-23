@@ -34,13 +34,12 @@ function startTrip() {
 function endTrip() {
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
-    watchId = null; // reset so trip can be restarted later
+    watchId = null;
     alert("Trip Ended. Location sharing stopped.");
   }
 }
 
 function logout() {
-  // also stop location sharing if still active
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;

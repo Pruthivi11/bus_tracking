@@ -8,11 +8,11 @@ const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your token
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
-    center: center || [80.2707, 13.0827], // default Chennai coords
+    center: center || [80.2707, 13.0827],
     zoom: 14
   });
 }
@@ -72,7 +72,7 @@ showBtn.addEventListener('click', () => {
       setInterval(fetchBusLocations, 5000);
     },
     err => {
-      if (!map) initMap([80.2707, 13.0827]); // fallback center
+      if (!map) initMap([80.2707, 13.0827]);
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
       setInterval(fetchBusLocations, 5000);
