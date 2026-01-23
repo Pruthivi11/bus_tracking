@@ -5,9 +5,21 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
+
 <div class="card">
   <h2>Administrator Dashboard</h2>
-  <p>Placeholder for admin features.</p>
+  <p>Here you can monitor active buses.</p>
+  <button onclick="loadBusData()">Refresh Bus Data</button>
+  <div id="busData"></div>
 </div>
+
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
+
+<script src="/static/admin.js"></script>
 </body>
 </html>

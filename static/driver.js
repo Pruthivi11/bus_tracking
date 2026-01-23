@@ -1,16 +1,4 @@
-let map, marker, watchId;
-
-function initMap(lat, lng) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
-  map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11',
-    center: [lng, lat],
-    zoom: 16
-  });
-
-  marker = new mapboxgl.Marker().setLngLat([lng, lat]).addTo(map);
-}
+let watchId;
 
 function startTrip() {
   const routeEl = document.getElementById('route');
@@ -21,8 +9,6 @@ function startTrip() {
   }
 
   navigator.geolocation.getCurrentPosition(pos => {
-    initMap(pos.coords.latitude, pos.coords.longitude);
-
     watchId = navigator.geolocation.watchPosition(p => {
       const data = {
         route: routeEl.value,
@@ -31,9 +17,6 @@ function startTrip() {
         lng: p.coords.longitude,
         time: Date.now()
       };
-
-      marker.setLngLat([data.lng, data.lat]);
-      map.setCenter([data.lng, data.lat]);
 
       fetch("/location", {
         method: "POST",
@@ -51,10 +34,16 @@ function startTrip() {
 function endTrip() {
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
-    alert("Trip Ended");
+    watchId = null; // reset so trip can be restarted later
+    alert("Trip Ended. Location sharing stopped.");
   }
 }
 
 function logout() {
+  // also stop location sharing if still active
+  if (watchId) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
   window.location.href = "/logout";
 }

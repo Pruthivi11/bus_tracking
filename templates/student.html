@@ -7,14 +7,25 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 </head>
 <body>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
+
 <div class="card">
   <h2>Student Dashboard</h2>
+  <label for="rollNo">Roll Number</label>
   <input id="rollNo" placeholder="Roll Number">
+  <label for="busNo">Bus Number</label>
   <input id="busNo" placeholder="Bus Number">
-  <button id="askPermission">Allow Location</button>
   <button id="showMap">Show Map</button>
 </div>
+
 <div id="map" style="display:none; height:500px;"></div>
+
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
+
 <script src="/static/student.js"></script>
 </body>
 </html>

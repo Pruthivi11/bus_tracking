@@ -1,20 +1,18 @@
 let map;
 let busMarkers = {};
 let studentMarker = null;
-let permissionGranted = false;
 
 const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
-const askBtn = document.getElementById('askPermission');
 const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
+  mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN'; // replace with your token
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
-    center: center || [80.2707, 13.0827],
+    center: center || [80.2707, 13.0827], // default Chennai coords
     zoom: 14
   });
 }
@@ -53,34 +51,12 @@ function fetchBusLocations() {
     .catch(() => {});
 }
 
-askBtn.addEventListener('click', () => {
-  if (!navigator.geolocation) {
-    alert("Geolocation not supported in this browser.");
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      permissionGranted = true;
-      alert("Location permission granted.");
-    },
-    err => {
-      permissionGranted = false;
-      alert("Permission denied or unavailable: " + err.message);
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
-});
-
 showBtn.addEventListener('click', () => {
   const roll = rollNoEl.value?.trim();
   const bus = busNoEl.value?.trim();
 
   if (!roll || !bus) {
     alert("Enter Roll Number and Bus Number.");
-    return;
-  }
-  if (!permissionGranted) {
-    alert("Please allow location first.");
     return;
   }
 
@@ -96,7 +72,7 @@ showBtn.addEventListener('click', () => {
       setInterval(fetchBusLocations, 5000);
     },
     err => {
-      if (!map) initMap([80.2707, 13.0827]);
+      if (!map) initMap([80.2707, 13.0827]); // fallback center
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
       setInterval(fetchBusLocations, 5000);

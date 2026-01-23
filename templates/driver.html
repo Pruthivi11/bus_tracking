@@ -3,10 +3,12 @@
 <head>
   <title>Driver Dashboard</title>
   <link rel="stylesheet" href="/static/style.css">
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 </head>
 <body>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
+
 <div class="card">
   <h2>Driver Trip Panel</h2>
   <input id="route" placeholder="Route Number">
@@ -20,7 +22,11 @@
   <button onclick="endTrip()">End Trip</button>
   <button onclick="logout()">Logout</button>
 </div>
-<div id="map" style="height:500px;"></div>
+
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
+
 <script src="/static/driver.js"></script>
 </body>
 </html>

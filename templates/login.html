@@ -5,18 +5,26 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
+
 <div class="card">
   <h2>Driver Login</h2>
-  <input id="phone" placeholder="Phone Number">
-  <button onclick="sendOTP()">Send OTP</button>
-  <input id="otp" placeholder="Enter OTP">
-  <button onclick="login()">Login</button>
+  <form method="POST" id="loginForm">
+    <label for="phone">Phone Number</label>
+    <input name="phone" id="phone" placeholder="Phone Number" required>
+    <button type="button" onclick="sendOTP()">Send OTP</button>
+
+    <label for="otp">Enter OTP</label>
+    <input name="otp" id="otp" placeholder="Enter OTP" required>
+    <button type="submit">Login</button>
+  </form>
 </div>
 
-<form method="POST" id="loginForm" style="display:none">
-  <input name="phone" id="p">
-  <input name="otp" id="o">
-</form>
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
 
 <script>
 function sendOTP() {
@@ -27,14 +35,6 @@ function sendOTP() {
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({phone: val})
   }).then(r => r.json()).then(d => alert(d.msg));
-}
-function login() {
-  const phoneEl = document.getElementById('phone');
-  const otpEl = document.getElementById('otp');
-  if (!phoneEl.value || !otpEl.value) { alert('Enter phone and OTP'); return; }
-  document.getElementById('p').value = phoneEl.value;
-  document.getElementById('o').value = otpEl.value;
-  document.getElementById('loginForm').submit();
 }
 </script>
 </body>
