@@ -8,7 +8,7 @@ const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN'; // replace with your token
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your token
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
