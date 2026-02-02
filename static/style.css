@@ -1,43 +1,58 @@
+/* General reset */
 body {
   font-family: Arial, sans-serif;
   background: #f2f2f2;
-  text-align: center;
   margin: 0;
   padding: 0;
+  color: #333;
 }
 
+/* Header & Footer */
 .navbar {
   background: #0077cc;
   color: white;
-  padding: 12px;
+  padding: 14px;
   text-align: center;
   font-size: 20px;
+  font-weight: bold;
 }
 
 .footer {
   background: #333;
   color: white;
-  padding: 8px;
+  padding: 10px;
   text-align: center;
   font-size: 12px;
   margin-top: 20px;
 }
 
+/* Card styling */
 .card {
   background: white;
-  width: 340px;
+  max-width: 400px;   /* desktop limit */
+  width: 90%;         /* mobile scaling */
   margin: 20px auto;
   padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  text-align: left;
 }
 
+.card h2 {
+  margin-top: 0;
+  text-align: center;
+  color: #0077cc;
+}
+
+/* Inputs & Buttons */
 input, select, button {
   width: 100%;
   margin: 8px 0;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid #ccc;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
 }
 
 button {
@@ -45,17 +60,38 @@ button {
   background: #0077cc;
   color: white;
   font-size: 16px;
+  font-weight: bold;
   cursor: pointer;
+  transition: background 0.3s ease;
 }
 
 button:hover {
   background: #005fa3;
 }
 
+/* Map styling */
 #map {
-  width: 90%;
-  height: 440px;
+  width: 95%;
+  height: 420px;
   margin: 20px auto;
   border: 2px solid #0077cc;
-  border-radius: 8px;
+  border-radius: 10px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 600px) {
+  .navbar {
+    font-size: 18px;
+    padding: 12px;
+  }
+  .card {
+    padding: 15px;
+  }
+  input, select, button {
+    font-size: 14px;
+    padding: 10px;
+  }
+  #map {
+    height: 300px;
+  }
 }
