@@ -75,7 +75,7 @@ showBtn.addEventListener('click', () => {
       if (!map) initMap([80.2707, 13.0827]);
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
-      setInterval(fetchBusLocations, 5000);
+      setInterval(fetchBusLocations, 3000);
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
