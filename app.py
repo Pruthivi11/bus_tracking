@@ -8,9 +8,8 @@ app.secret_key = "driver_secret"
 CORS(app)
 
 # --- DB Config ---
-# Local dev (SQLite)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
-# On Render, replace with PostgreSQL connection string:
+# For Render, replace with PostgreSQL connection string
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://USER:PASSWORD@HOST:5432/DBNAME'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -25,10 +24,17 @@ class Driver(db.Model):
 
 class BusLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    route = db.Column(db.String(20))
+    route = db.Column(db.String(20), unique=True, nullable=False)
     bus_type = db.Column(db.String(20))
     lat = db.Column(db.Float)
     lng = db.Column(db.Float)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Onboard(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    roll_no = db.Column(db.String(20), nullable=False)
+    bus_route = db.Column(db.String(20), nullable=False)
+    onboard = db.Column(db.Boolean, default=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
 # --- Routes ---
@@ -74,13 +80,20 @@ def driver():
 def location():
     data = request.json
     if all(k in data for k in ("route", "busType", "lat", "lng", "time")):
-        loc = BusLocation(
-            route=data["route"],
-            bus_type=data["busType"],
-            lat=data["lat"],
-            lng=data["lng"]
-        )
-        db.session.add(loc)
+        bus = BusLocation.query.filter_by(route=data["route"]).first()
+        if bus:
+            bus.lat = data["lat"]
+            bus.lng = data["lng"]
+            bus.bus_type = data["busType"]
+            bus.timestamp = datetime.utcnow()
+        else:
+            bus = BusLocation(
+                route=data["route"],
+                bus_type=data["busType"],
+                lat=data["lat"],
+                lng=data["lng"]
+            )
+            db.session.add(bus)
         db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -95,7 +108,7 @@ def student():
 
 @app.route("/get_locations")
 def get_locations():
-    locations = BusLocation.query.order_by(BusLocation.timestamp.desc()).limit(20).all()
+    locations = BusLocation.query.all()
     return jsonify([
         {
             "route": l.route,
@@ -106,11 +119,30 @@ def get_locations():
         } for l in locations
     ])
 
+@app.route("/onboard", methods=["POST"])
+def onboard():
+    data = request.json
+    roll_no = data["rollNo"]
+    bus_route = data["busRoute"]
+    onboard_flag = data["onboard"]
+
+    record = Onboard.query.filter_by(roll_no=roll_no, bus_route=bus_route).first()
+    if record:
+        record.onboard = onboard_flag
+        record.timestamp = datetime.utcnow()
+    else:
+        record = Onboard(roll_no=roll_no, bus_route=bus_route, onboard=onboard_flag)
+        db.session.add(record)
+    db.session.commit()
+
+    return jsonify({"status": "ok"})
+
 @app.route("/admin")
 def admin():
-    return render_template("admin.html")
+    onboard_records = Onboard.query.all()
+    return render_template("admin.html", onboard=onboard_records)
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()   # now inside the app context
+        db.create_all()
     app.run(debug=True)

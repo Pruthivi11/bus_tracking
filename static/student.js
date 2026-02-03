@@ -1,6 +1,7 @@
 let map;
 let busMarkers = {};
 let studentMarker = null;
+let studentWatchId = null;
 
 const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
@@ -28,7 +29,32 @@ function placeStudentMarker(lat, lng) {
   }
 }
 
-function fetchBusLocations() {
+// Haversine formula for distance in meters
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Custom bus marker with Font Awesome icon + route number
+function createBusMarker(route, lat, lng) {
+  const el = document.createElement('div');
+  el.className = 'bus-marker';
+  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:20px;"></i>
+                  <div class="route-label">${route}</div>`;
+  return new mapboxgl.Marker(el)
+    .setLngLat([lng, lat])
+    .setPopup(new mapboxgl.Popup().setText(`Bus ${route}`))
+    .addTo(map);
+}
+
+function fetchBusLocations(studentLat, studentLng) {
   const busNo = busNoEl.value?.trim();
   fetch("/get_locations")
     .then(r => r.json())
@@ -39,12 +65,31 @@ function fetchBusLocations() {
         }
         const key = bus.route + "-" + bus.busType;
         if (!busMarkers[key]) {
-          busMarkers[key] = new mapboxgl.Marker({ color: "red" })
-            .setLngLat([bus.lng, bus.lat])
-            .setPopup(new mapboxgl.Popup().setText(`Route: ${bus.route}, Type: ${bus.busType}`))
-            .addTo(map);
+          busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
         } else {
           busMarkers[key].setLngLat([bus.lng, bus.lat]);
+        }
+
+        // Check if student is within 5 meters of bus
+        if (studentLat && studentLng) {
+          const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
+          if (dist <= 5) {
+            // Student onboard → notify backend
+            fetch("/onboard", {
+              method: "POST",
+              headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({
+                rollNo: rollNoEl.value,
+                busRoute: busNoEl.value,
+                onboard: true
+              })
+            });
+
+            if (studentMarker) {
+              studentMarker.remove();
+              studentMarker = null;
+            }
+          }
         }
       });
     })
@@ -62,21 +107,30 @@ showBtn.addEventListener('click', () => {
 
   mapEl.style.display = 'block';
 
-  navigator.geolocation.getCurrentPosition(
+  // Start watching student location
+  studentWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
       if (!map) initMap([longitude, latitude]);
       placeStudentMarker(latitude, longitude);
 
-      fetchBusLocations();
-      setInterval(fetchBusLocations, 5000);
+      fetchBusLocations(latitude, longitude);
     },
     err => {
       if (!map) initMap([80.2707, 13.0827]);
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
-      setInterval(fetchBusLocations, 3000);
     },
-    { enableHighAccuracy: true, timeout: 10000 }
+    { enableHighAccuracy: true, maximumAge: 1000 }
   );
+
+  // Poll bus locations every 5 seconds
+  setInterval(() => {
+    if (studentMarker) {
+      const coords = studentMarker.getLngLat();
+      fetchBusLocations(coords.lat, coords.lng);
+    } else {
+      fetchBusLocations();
+    }
+  }, 1000);
 });
