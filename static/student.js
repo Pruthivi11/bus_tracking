@@ -13,9 +13,26 @@ const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
 const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
+const sessionToggle = document.getElementById('sessionToggle');
+const destinationField = document.getElementById('destinationField');
+const remainderOptions = document.getElementById('remainderOptions');
+const destinationLabel = document.getElementById('destinationLabel');
+let destinationCoords = null;
+
+// Toggle logic
+sessionToggle.addEventListener('change', () => {
+  if (sessionToggle.value === 'evening') {
+    destinationField.style.display = 'block';
+    remainderOptions.style.display = 'block';
+  } else {
+    destinationField.style.display = 'none';
+    remainderOptions.style.display = 'none';
+    destinationCoords = null;
+  }
+});
 
 function initMap(center) {
-  mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
@@ -53,7 +70,7 @@ function getDistance(lat1, lon1, lat2, lon2) {
 function createBusMarker(route, lat, lng) {
   const el = document.createElement('div');
   el.className = 'bus-marker';
-  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:20px;"></i>
+  el.innerHTML = `<i class="fa-solid fa-bus"></i>
                   <div class="route-label">${route}</div>`;
   return new mapboxgl.Marker(el)
     .setLngLat([lng, lat])
@@ -61,20 +78,41 @@ function createBusMarker(route, lat, lng) {
     .addTo(map);
 }
 
+// Destination selection (evening mode)
+document.getElementById('selectDestination').addEventListener('click', () => {
+  alert("Click on the map to set your destination.");
+  map.once('click', (e) => {
+    destinationCoords = e.lngLat;
+    destinationLabel.textContent = `Destination set: ${destinationCoords.lat.toFixed(5)}, ${destinationCoords.lng.toFixed(5)}`;
+  });
+});
+
 // Proximity notifications
 function checkProximity(studentLat, studentLng, busLat, busLng, route) {
-  const dist = getDistance(studentLat, studentLng, busLat, busLng);
+  let targetLat, targetLng;
 
-  if (dist <= 2000 && !notified2km) {
-    alert(`Bus ${route} is within 2 km of you!`);
+  if (sessionToggle.value === 'morning') {
+    targetLat = studentLat;
+    targetLng = studentLng;
+  } else if (sessionToggle.value === 'evening' && destinationCoords) {
+    targetLat = destinationCoords.lat;
+    targetLng = destinationCoords.lng;
+  } else {
+    return; // no destination set yet
+  }
+
+  const dist = getDistance(targetLat, targetLng, busLat, busLng);
+
+  if (dist <= 2000 && !notified2km && document.getElementById('rem2km').checked) {
+    alert(`Bus ${route} is within 2 km!`);
     notified2km = true;
   }
-  if (dist <= 1000 && !notified1km) {
-    alert(`Bus ${route} is within 1 km of you!`);
+  if (dist <= 1000 && !notified1km && document.getElementById('rem1km').checked) {
+    alert(`Bus ${route} is within 1 km!`);
     notified1km = true;
   }
-  if (dist <= 500 && !notified500m) {
-    alert(`Bus ${route} is within 500 meters of you!`);
+  if (dist <= 500 && !notified500m && document.getElementById('rem500m').checked) {
+    alert(`Bus ${route} is within 500 m!`);
     notified500m = true;
   }
 }
@@ -99,25 +137,27 @@ function fetchBusLocations(studentLat, studentLng) {
           // Proximity notifications
           checkProximity(studentLat, studentLng, bus.lat, bus.lng, bus.route);
 
-          // Onboard logic
-          const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
-          if (dist <= 5 && !isOnboard) {
-            fetch("/onboard", {
-              method: "POST",
-              headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({
-                rollNo: rollNoEl.value,
-                busRoute: busNoEl.value,
-                onboard: true
-              })
-            });
+          // Onboard logic (morning only)
+          if (sessionToggle.value === 'morning') {
+            const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
+            if (dist <= 5 && !isOnboard) {
+              fetch("/onboard", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({
+                  rollNo: rollNoEl.value,
+                  busRoute: busNoEl.value,
+                  onboard: true
+                })
+              });
 
-            if (studentMarker) {
-              studentMarker.remove();
-              studentMarker = null;
+              if (studentMarker) {
+                studentMarker.remove();
+                studentMarker = null;
+              }
+
+              isOnboard = true; // prevent re-adding marker
             }
-
-            isOnboard = true; // prevent re-adding marker
           }
         }
       });
