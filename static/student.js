@@ -3,13 +3,19 @@ let busMarkers = {};
 let studentMarker = null;
 let studentWatchId = null;
 
+// Flags
+let isOnboard = false;
+let notified2km = false;
+let notified1km = false;
+let notified500m = false;
+
 const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
 const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
+  mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
@@ -19,6 +25,7 @@ function initMap(center) {
 }
 
 function placeStudentMarker(lat, lng) {
+  if (isOnboard) return; // don't place marker if onboard
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -54,6 +61,24 @@ function createBusMarker(route, lat, lng) {
     .addTo(map);
 }
 
+// Proximity notifications
+function checkProximity(studentLat, studentLng, busLat, busLng, route) {
+  const dist = getDistance(studentLat, studentLng, busLat, busLng);
+
+  if (dist <= 2000 && !notified2km) {
+    alert(`Bus ${route} is within 2 km of you!`);
+    notified2km = true;
+  }
+  if (dist <= 1000 && !notified1km) {
+    alert(`Bus ${route} is within 1 km of you!`);
+    notified1km = true;
+  }
+  if (dist <= 500 && !notified500m) {
+    alert(`Bus ${route} is within 500 meters of you!`);
+    notified500m = true;
+  }
+}
+
 function fetchBusLocations(studentLat, studentLng) {
   const busNo = busNoEl.value?.trim();
   fetch("/get_locations")
@@ -70,11 +95,13 @@ function fetchBusLocations(studentLat, studentLng) {
           busMarkers[key].setLngLat([bus.lng, bus.lat]);
         }
 
-        // Check if student is within 5 meters of bus
         if (studentLat && studentLng) {
+          // Proximity notifications
+          checkProximity(studentLat, studentLng, bus.lat, bus.lng, bus.route);
+
+          // Onboard logic
           const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
-          if (dist <= 5) {
-            // Student onboard → notify backend
+          if (dist <= 5 && !isOnboard) {
             fetch("/onboard", {
               method: "POST",
               headers: {"Content-Type":"application/json"},
@@ -89,6 +116,8 @@ function fetchBusLocations(studentLat, studentLng) {
               studentMarker.remove();
               studentMarker = null;
             }
+
+            isOnboard = true; // prevent re-adding marker
           }
         }
       });
@@ -104,6 +133,12 @@ showBtn.addEventListener('click', () => {
     alert("Enter Roll Number and Bus Number.");
     return;
   }
+
+  // Reset flags for new session
+  isOnboard = false;
+  notified2km = false;
+  notified1km = false;
+  notified500m = false;
 
   mapEl.style.display = 'block';
 
