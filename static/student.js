@@ -44,7 +44,7 @@ function initMap(center) {
 }
 
 function placeStudentMarker(lat, lng) {
-  if (isOnboard) return;
+  if (isOnboard) return; // don't place marker if onboard
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -55,6 +55,7 @@ function placeStudentMarker(lat, lng) {
   }
 }
 
+// Haversine formula for distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
@@ -67,10 +68,11 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Custom bus marker with Font Awesome icon + route number
 function createBusMarker(route, lat, lng) {
   const el = document.createElement('div');
   el.className = 'bus-marker';
-  el.innerHTML = `<i class="fa-solid fa-bus"></i>
+  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:30px;"></i>
                   <div class="route-label">${route}</div>`;
   return new mapboxgl.Marker(el)
     .setLngLat([lng, lat])
@@ -78,6 +80,7 @@ function createBusMarker(route, lat, lng) {
     .addTo(map);
 }
 
+// Destination selection (evening mode)
 document.getElementById('selectDestination').addEventListener('click', () => {
   alert("Click on the map to set your destination.");
   map.once('click', (e) => {
@@ -86,6 +89,7 @@ document.getElementById('selectDestination').addEventListener('click', () => {
   });
 });
 
+// Proximity notifications
 function checkProximity(studentLat, studentLng, busLat, busLng, route) {
   let targetLat, targetLng;
   if (sessionToggle.value === 'morning') {
@@ -169,6 +173,7 @@ showBtn.addEventListener('click', () => {
     return;
   }
 
+  // Reset flags
   isOnboard = false;
   notified2km = false;
   notified1km = false;
