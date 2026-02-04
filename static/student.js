@@ -30,6 +30,8 @@ sessionToggle.addEventListener('change', () => {
     destinationCoords = null;
   }
 });
+// Trigger once on load
+sessionToggle.dispatchEvent(new Event('change'));
 
 function initMap(center) {
   mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
@@ -42,7 +44,7 @@ function initMap(center) {
 }
 
 function placeStudentMarker(lat, lng) {
-  if (isOnboard) return; // don't place marker if onboard
+  if (isOnboard) return;
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -53,7 +55,6 @@ function placeStudentMarker(lat, lng) {
   }
 }
 
-// Haversine formula for distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
@@ -66,7 +67,6 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Custom bus marker with Font Awesome icon + route number
 function createBusMarker(route, lat, lng) {
   const el = document.createElement('div');
   el.className = 'bus-marker';
@@ -78,7 +78,6 @@ function createBusMarker(route, lat, lng) {
     .addTo(map);
 }
 
-// Destination selection (evening mode)
 document.getElementById('selectDestination').addEventListener('click', () => {
   alert("Click on the map to set your destination.");
   map.once('click', (e) => {
@@ -87,10 +86,8 @@ document.getElementById('selectDestination').addEventListener('click', () => {
   });
 });
 
-// Proximity notifications
 function checkProximity(studentLat, studentLng, busLat, busLng, route) {
   let targetLat, targetLng;
-
   if (sessionToggle.value === 'morning') {
     targetLat = studentLat;
     targetLng = studentLng;
@@ -98,7 +95,7 @@ function checkProximity(studentLat, studentLng, busLat, busLng, route) {
     targetLat = destinationCoords.lat;
     targetLng = destinationCoords.lng;
   } else {
-    return; // no destination set yet
+    return;
   }
 
   const dist = getDistance(targetLat, targetLng, busLat, busLng);
@@ -134,10 +131,8 @@ function fetchBusLocations(studentLat, studentLng) {
         }
 
         if (studentLat && studentLng) {
-          // Proximity notifications
           checkProximity(studentLat, studentLng, bus.lat, bus.lng, bus.route);
 
-          // Onboard logic (morning only)
           if (sessionToggle.value === 'morning') {
             const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
             if (dist <= 5 && !isOnboard) {
@@ -156,7 +151,7 @@ function fetchBusLocations(studentLat, studentLng) {
                 studentMarker = null;
               }
 
-              isOnboard = true; // prevent re-adding marker
+              isOnboard = true;
             }
           }
         }
@@ -174,7 +169,6 @@ showBtn.addEventListener('click', () => {
     return;
   }
 
-  // Reset flags for new session
   isOnboard = false;
   notified2km = false;
   notified1km = false;
@@ -182,24 +176,23 @@ showBtn.addEventListener('click', () => {
 
   mapEl.style.display = 'block';
 
-  // Start watching student location
+  if (!map) initMap([80.2707, 13.0827]);
+  map.resize();
+
   studentWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
-      if (!map) initMap([longitude, latitude]);
+      map.setCenter([longitude, latitude]);
       placeStudentMarker(latitude, longitude);
-
       fetchBusLocations(latitude, longitude);
     },
     err => {
-      if (!map) initMap([80.2707, 13.0827]);
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
     },
     { enableHighAccuracy: true, maximumAge: 1000 }
   );
 
-  // Poll bus locations every 5 seconds
   setInterval(() => {
     if (studentMarker) {
       const coords = studentMarker.getLngLat();
