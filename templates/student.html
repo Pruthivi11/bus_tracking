@@ -27,7 +27,7 @@
       color: #0077cc;
       text-align: center;
     }
-    .login-card input, .login-card select, .login-card button {
+    .login-card input, .login-card button {
       width: 100%;
       padding: 12px;
       margin: 10px 0;
@@ -45,14 +45,6 @@
     .login-card button:hover {
       background: #005fa3;
     }
-    .toggle-switch {
-      display: flex;
-      align-items: center;
-      margin: 5px 0;
-    }
-    .toggle-switch input {
-      margin-right: 8px;
-    }
     /* Responsive map */
     #map {
       width: 100%;
@@ -61,7 +53,7 @@
     }
     .bus-marker i {
       color: red;
-      font-size: 40px; /* bigger bus icon */
+      font-size: 30px; /* bus icon size */
     }
     .route-label {
       font-size: 14px;
@@ -80,38 +72,9 @@
     <i class="fa-solid fa-bus" style="font-size:40px; color:#0077cc; display:block; text-align:center;"></i>
     <h2>Student Login</h2>
 
-    <!-- Morning/Evening Toggle -->
-    <label>Session:</label>
-    <select id="sessionToggle">
-      <option value="morning">Morning</option>
-      <option value="evening">Evening</option>
-    </select>
-
     <!-- Common Fields -->
     <input type="text" id="rollNo" placeholder="Enter Roll Number">
     <input type="text" id="busNo" placeholder="Enter Bus Number">
-
-    <!-- Evening-only Destination -->
-    <div id="destinationField" style="display:none; margin-top:10px;">
-      <button id="selectDestination">Select Destination on Map</button>
-      <p id="destinationLabel" style="font-size:14px; color:#555;"></p>
-    </div>
-
-    <!-- Evening-only Reminder Toggles -->
-    <div id="remainderOptions" style="display:none; margin-top:15px;">
-      <div class="toggle-switch">
-        <input type="checkbox" id="rem2km" checked>
-        <label for="rem2km">2 km Reminder</label>
-      </div>
-      <div class="toggle-switch">
-        <input type="checkbox" id="rem1km" checked>
-        <label for="rem1km">1 km Reminder</label>
-      </div>
-      <div class="toggle-switch">
-        <input type="checkbox" id="rem500m" checked>
-        <label for="rem500m">500 m Reminder</label>
-      </div>
-    </div>
 
     <button id="showMap">Show Map</button>
   </div>
