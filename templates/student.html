@@ -1,90 +1,41 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Student Login</title>
-  <!-- Font Awesome for bus icon -->
+  <title>Student Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <!-- Mapbox CSS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f6f9;
-      margin: 0;
-      padding: 0;
-    }
-    .login-card {
-      max-width: 400px;
-      margin: 20px auto;
-      padding: 20px;
-      border-radius: 10px;
-      background: #fff;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    .login-card h2 {
-      margin: 10px 0;
-      color: #0077cc;
-      text-align: center;
-    }
-    .login-card input, .login-card button {
-      width: 100%;
-      padding: 12px;
-      margin: 10px 0;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      font-size: 14px;
-    }
-    .login-card button {
-      background: #0077cc;
-      color: #fff;
-      border: none;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    .login-card button:hover {
-      background: #005fa3;
-    }
-    /* Responsive map */
-    #map {
-      width: 100%;
-      height: 65vh; /* adjusts to mobile screen */
-      display: none;
-    }
-    .bus-marker i {
-      color: red;
-      font-size: 30px; /* bus icon size */
-    }
-    .route-label {
-      font-size: 14px;
-      font-weight: bold;
-      background: white;
-      border: 1px solid #0077cc;
-      border-radius: 4px;
-      padding: 2px 4px;
-      margin-top: -4px;
-      text-align: center;
-    }
-  </style>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <meta charset="UTF-8">
+  <title>Bus Tracking System</title>
+  <!-- Responsive scaling for mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Link to shared stylesheet -->
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Mapbox CSS (only needed in student.html) -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+</head>
 </head>
 <body>
-  <div class="login-card">
-    <i class="fa-solid fa-bus" style="font-size:40px; color:#0077cc; display:block; text-align:center;"></i>
-    <h2>Student Login</h2>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
 
-    <!-- Common Fields -->
-    <input type="text" id="rollNo" placeholder="Enter Roll Number">
-    <input type="text" id="busNo" placeholder="Enter Bus Number">
+<div class="card">
+  <h2>Student Dashboard</h2>
+  <label for="rollNo">Roll Number</label>
+  <input id="rollNo" placeholder="Roll Number">
+  <label for="busNo">Bus Number</label>
+  <input id="busNo" placeholder="Bus Number">
+  <button id="showMap">Show Map</button>
+</div>
 
-    <button id="showMap">Show Map</button>
-  </div>
+<div id="map" style="display:none; height:500px;"></div>
 
-  <!-- Map container -->
-  <div id="map"></div>
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
 
-  <!-- Mapbox JS -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-  <!-- Student JS -->
-  <script src="student.js"></script>
+<script src="/static/student.js"></script>
 </body>
 </html>

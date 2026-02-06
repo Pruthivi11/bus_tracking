@@ -28,7 +28,44 @@
   <button onclick="endTrip()">End Trip</button>
   <button onclick="logout()">Logout</button>
 </div>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bus Tracking System</title>
+  <!-- Responsive scaling for mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Link to shared stylesheet -->
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Mapbox CSS (only needed in student.html) -->
+  <!-- <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" /> -->
+</head>
+<body>
+<header class="navbar">
+  <h1>Bus Tracking System</h1>
+</header>
 
+<div class="card">
+  <h2>Driver Trip Panel</h2>
+  <input id="route" placeholder="Route Number">
+  <select id="busType">
+    <option value="">Select Bus Type</option>
+    <option value="boys">Boys</option>
+    <option value="girls">Girls</option>
+    <option value="common">Common</option>
+  </select>
+  <button onclick="startTrip()">Start Trip</button>
+  <button onclick="endTrip()">End Trip</button>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<footer class="footer">
+  <p>&copy; 2026 College Transport</p>
+</footer>
+
+<script src="/static/driver.js"></script>
+</body>
+</html>
 <footer class="footer">
   <p>&copy; 2026 College Transport</p>
 </footer>
