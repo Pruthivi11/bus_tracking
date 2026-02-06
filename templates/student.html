@@ -1,20 +1,19 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Student Dashboard</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <meta charset="UTF-8">
-  <title>Bus Tracking System</title>
+  <title>Student Dashboard | Bus Tracking System</title>
   <!-- Responsive scaling for mobile -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Link to shared stylesheet -->
+
+  <!-- Shared stylesheet -->
   <link rel="stylesheet" href="/static/style.css">
-  <!-- Mapbox CSS (only needed in student.html) -->
+
+  <!-- Font Awesome for bus icon -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Mapbox CSS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
-</head>
 </head>
 <body>
 <header class="navbar">
@@ -30,12 +29,16 @@
   <button id="showMap">Show Map</button>
 </div>
 
-<div id="map" style="display:none; height:500px;"></div>
+<!-- Map container -->
+<div id="map" style="display:none; width:100%; height:65vh;"></div>
 
 <footer class="footer">
   <p>&copy; 2026 College Transport</p>
 </footer>
 
+<!-- Mapbox JS -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<!-- Student JS -->
 <script src="/static/student.js"></script>
 </body>
 </html>
