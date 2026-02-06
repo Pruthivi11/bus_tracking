@@ -1,3 +1,4 @@
+stud.js
 let map;
 let busMarkers = {};
 let studentMarker = null;
@@ -46,7 +47,7 @@ function getDistance(lat1, lon1, lat2, lon2) {
 function createBusMarker(route, lat, lng) {
   const el = document.createElement('div');
   el.className = 'bus-marker';
-  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:20px;"></i>
+  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:40px;"></i>
                   <div class="route-label">${route}</div>`;
   return new mapboxgl.Marker(el)
     .setLngLat([lng, lat])
@@ -124,7 +125,7 @@ showBtn.addEventListener('click', () => {
     { enableHighAccuracy: true, maximumAge: 1000 }
   );
 
-  // Poll bus locations every 5 seconds
+  // Poll bus locations every  second
   setInterval(() => {
     if (studentMarker) {
       const coords = studentMarker.getLngLat();
