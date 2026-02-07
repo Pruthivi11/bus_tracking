@@ -9,7 +9,7 @@ const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ';
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your real token
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
@@ -105,26 +105,29 @@ showBtn.addEventListener('click', () => {
     return;
   }
 
+  // Make map container visible
   mapEl.style.display = 'block';
+
+  // Always initialize map immediately with a default center
+  if (!map) initMap([80.2707, 13.0827]);
+  map.resize();   // force redraw after showing
 
   // Start watching student location
   studentWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
-      if (!map) initMap([longitude, latitude]);
+      map.setCenter([longitude, latitude]);   // center map on student
       placeStudentMarker(latitude, longitude);
-
       fetchBusLocations(latitude, longitude);
     },
     err => {
-      if (!map) initMap([80.2707, 13.0827]);
       alert("Unable to get your location: " + err.message);
       fetchBusLocations();
     },
     { enableHighAccuracy: true, maximumAge: 1000 }
   );
 
-  // Poll bus locations every 5 seconds
+  // Poll bus locations every second
   setInterval(() => {
     if (studentMarker) {
       const coords = studentMarker.getLngLat();
