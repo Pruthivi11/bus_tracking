@@ -2,6 +2,8 @@ let map;
 let busMarkers = {};
 let studentMarker = null;
 let studentWatchId = null;
+let pollInterval = null;
+let isOnboard = false;
 
 const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
@@ -19,6 +21,7 @@ function initMap(center) {
 }
 
 function placeStudentMarker(lat, lng) {
+  if (isOnboard) return; // don't place marker if onboard
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -34,7 +37,7 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+  const dLon = toRad(lat2 - lon1);
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
             Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
             Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -71,7 +74,7 @@ function fetchBusLocations(studentLat, studentLng) {
         }
 
         // Check if student is within 5 meters of bus
-        if (studentLat && studentLng) {
+        if (studentLat && studentLng && !isOnboard) {
           const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
           if (dist <= 5) {
             // Student onboard → notify backend
@@ -89,6 +92,7 @@ function fetchBusLocations(studentLat, studentLng) {
               studentMarker.remove();
               studentMarker = null;
             }
+            isOnboard = true;
           }
         }
       });
@@ -105,18 +109,23 @@ showBtn.addEventListener('click', () => {
     return;
   }
 
-  // Make map container visible
   mapEl.style.display = 'block';
 
-  // Always initialize map immediately with a default center
+  // Initialize map immediately
   if (!map) initMap([80.2707, 13.0827]);
-  map.resize();   // force redraw after showing
+  map.resize();
+
+  // Clear any old polling loop
+  if (pollInterval) clearInterval(pollInterval);
+
+  // Reset flags
+  isOnboard = false;
 
   // Start watching student location
   studentWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
-      map.setCenter([longitude, latitude]);   // center map on student
+      map.setCenter([longitude, latitude]);
       placeStudentMarker(latitude, longitude);
       fetchBusLocations(latitude, longitude);
     },
@@ -128,7 +137,7 @@ showBtn.addEventListener('click', () => {
   );
 
   // Poll bus locations every second
-  setInterval(() => {
+  pollInterval = setInterval(() => {
     if (studentMarker) {
       const coords = studentMarker.getLngLat();
       fetchBusLocations(coords.lat, coords.lng);
