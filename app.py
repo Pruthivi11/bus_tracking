@@ -10,9 +10,6 @@ CORS(app)
 
 # --- DB Config ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
-# For Render, replace with PostgreSQL connection string
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://USER:PASSWORD@HOST:5432/DBNAME'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -30,6 +27,7 @@ class BusLocation(db.Model):
     lat = db.Column(db.Float)
     lng = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    active = db.Column(db.Boolean, default=True)   # NEW FLAG
 
 class Onboard(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -87,16 +85,28 @@ def location():
             bus.lng = data["lng"]
             bus.bus_type = data["busType"]
             bus.timestamp = datetime.utcnow()
+            bus.active = True   # ensure active when updating
         else:
             bus = BusLocation(
                 route=data["route"],
                 bus_type=data["busType"],
                 lat=data["lat"],
-                lng=data["lng"]
+                lng=data["lng"],
+                active=True
             )
             db.session.add(bus)
         db.session.commit()
     return jsonify({"status": "ok"})
+
+@app.route("/end_trip", methods=["POST"])
+def end_trip():
+    data = request.json
+    route = data.get("route")
+    bus = BusLocation.query.filter_by(route=route).first()
+    if bus:
+        bus.active = False
+        db.session.commit()
+    return jsonify({"status": "ended"})
 
 @app.route("/logout")
 def logout():
@@ -109,7 +119,7 @@ def student():
 
 @app.route("/get_locations")
 def get_locations():
-    locations = BusLocation.query.all()
+    locations = BusLocation.query.filter_by(active=True).all()
     return jsonify([
         {
             "route": l.route,

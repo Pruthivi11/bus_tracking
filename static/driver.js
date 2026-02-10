@@ -32,17 +32,33 @@ function startTrip() {
 }
 
 function endTrip() {
+  const routeEl = document.getElementById('route');
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
-    alert("Trip Ended. Location sharing stopped.");
   }
+  // Mark bus inactive in backend
+  fetch("/end_trip", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ route: routeEl.value })
+  }).then(() => {
+    alert("Trip Ended. Location sharing stopped.");
+  });
 }
 
 function logout() {
+  const routeEl = document.getElementById('route');
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  window.location.href = "/logout";
+  // Also mark bus inactive when logging out
+  fetch("/end_trip", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ route: routeEl.value })
+  }).finally(() => {
+    window.location.href = "/logout";
+  });
 }
