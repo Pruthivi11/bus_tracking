@@ -75,7 +75,7 @@ function fetchBusLocations(studentLat, studentLng) {
         const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
         if (bus) {
-          statusEl.textContent = `Bus ${busNo} is active.`;
+          statusEl.textContent = `Bus ${busNo} is active.,${busType}`;
           const key = bus.route + "-" + bus.busType;
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
