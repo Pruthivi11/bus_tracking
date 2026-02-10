@@ -40,7 +40,7 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lat2 - lon1);
+  const dLon = toRad(lon2 - lon1);
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
             Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
             Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -71,13 +71,18 @@ function fetchBusLocations(studentLat, studentLng) {
       busMarkers = {};
 
       if (busNo) {
+        // Look for the specific bus
         const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
         if (bus) {
-          statusEl.textContent = `Bus ${bus.route} (${bus.busType || "Unknown"}) is active.`;
+          // ✅ Guard against undefined busType
+          const busTypeText = bus.busType ? bus.busType : "Unknown";
+          statusEl.textContent = `Bus ${bus.route} (${busTypeText}) is active.`;
+
           const key = bus.route + "-" + bus.busType;
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
+          // Check distance for onboard logic
           if (studentLat && studentLng && !isOnboard) {
             const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
             if (dist <= 5) {
@@ -100,9 +105,11 @@ function fetchBusLocations(studentLat, studentLng) {
             }
           }
         } else {
+          // Bus not active → only show student location
           statusEl.textContent = `Bus ${busNo} is not active. Showing only your location.`;
         }
       } else {
+        // No bus number entered → only show student location
         statusEl.textContent = "No bus number entered. Showing only your location.";
       }
     })
