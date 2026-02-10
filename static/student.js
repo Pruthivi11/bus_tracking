@@ -71,15 +71,13 @@ function fetchBusLocations(studentLat, studentLng) {
       busMarkers = {};
 
       if (busNo) {
-        // Look for the specific bus
         const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
         if (bus) {
-          statusEl.textContent = `Bus ${bus.route} (${bus.busType}) is active.`;
+          statusEl.textContent = `Bus ${bus.route} (${bus.busType || "Unknown"}) is active.`;
           const key = bus.route + "-" + bus.busType;
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
-          // Check distance for onboard logic
           if (studentLat && studentLng && !isOnboard) {
             const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
             if (dist <= 5) {
@@ -102,15 +100,14 @@ function fetchBusLocations(studentLat, studentLng) {
             }
           }
         } else {
-          // Bus not active → only show student location
           statusEl.textContent = `Bus ${busNo} is not active. Showing only your location.`;
         }
       } else {
-        // No bus number entered → only show student location
         statusEl.textContent = "No bus number entered. Showing only your location.";
       }
     })
-    .catch(() => {
+    .catch(err => {
+      console.error("Error fetching bus locations:", err);
       statusEl.textContent = "Failed to fetch bus locations.";
     });
 }
