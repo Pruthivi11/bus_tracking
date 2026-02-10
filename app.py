@@ -10,9 +10,6 @@ CORS(app)
 
 # --- DB Config ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
-# For deployment, replace with PostgreSQL connection string if needed
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://USER:PASSWORD@HOST:5432/DBNAME'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -30,7 +27,7 @@ class BusLocation(db.Model):
     lat = db.Column(db.Float)
     lng = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    active = db.Column(db.Boolean, default=True)   # NEW FLAG
+    active = db.Column(db.Boolean, default=True)   # ✅ flag for active/inactive
 
 class Onboard(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -88,7 +85,7 @@ def location():
             bus.lng = data["lng"]
             bus.bus_type = data["busType"]
             bus.timestamp = datetime.utcnow()
-            bus.active = True   # ensure active when updating
+            bus.active = True   # ✅ mark active when updating
         else:
             bus = BusLocation(
                 route=data["route"],
