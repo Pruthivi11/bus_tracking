@@ -10,6 +10,9 @@ CORS(app)
 
 # --- DB Config ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
+# For deployment, replace with PostgreSQL connection string if needed
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://USER:PASSWORD@HOST:5432/DBNAME'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -102,11 +105,18 @@ def location():
 def end_trip():
     data = request.json
     route = data.get("route")
+
+    # ✅ Safeguard: route must be provided
+    if not route:
+        return jsonify({"status": "error", "msg": "No route provided"}), 400
+
     bus = BusLocation.query.filter_by(route=route).first()
     if bus:
         bus.active = False
         db.session.commit()
-    return jsonify({"status": "ended"})
+        return jsonify({"status": "ended", "msg": f"Bus {route} marked inactive"})
+    else:
+        return jsonify({"status": "error", "msg": f"No bus found for route {route}"}), 404
 
 @app.route("/logout")
 def logout():
@@ -119,6 +129,7 @@ def student():
 
 @app.route("/get_locations")
 def get_locations():
+    # ✅ Only return active buses
     locations = BusLocation.query.filter_by(active=True).all()
     return jsonify([
         {

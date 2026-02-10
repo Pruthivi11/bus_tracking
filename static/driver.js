@@ -22,7 +22,7 @@ function startTrip() {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify(data)
-      }).catch(() => {});
+      }).catch(err => console.error("Location update failed:", err));
     }, err => {
       console.warn("watchPosition error:", err);
     }, { enableHighAccuracy: true, maximumAge: 1000 });
@@ -37,14 +37,24 @@ function endTrip() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  // Mark bus inactive in backend
-  fetch("/end_trip", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ route: routeEl.value })
-  }).then(() => {
-    alert("Trip Ended. Location sharing stopped.");
-  });
+  if (routeEl.value) {
+    fetch("/end_trip", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ route: routeEl.value })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.status === "ended") {
+        alert(res.msg);
+      } else {
+        alert("End trip error: " + res.msg);
+      }
+    })
+    .catch(err => console.error("End trip failed:", err));
+  } else {
+    alert("No route entered, cannot mark bus inactive.");
+  }
 }
 
 function logout() {
@@ -53,12 +63,16 @@ function logout() {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  // Also mark bus inactive when logging out
-  fetch("/end_trip", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ route: routeEl.value })
-  }).finally(() => {
+  if (routeEl.value) {
+    fetch("/end_trip", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ route: routeEl.value })
+    })
+    .finally(() => {
+      window.location.href = "/logout";
+    });
+  } else {
     window.location.href = "/logout";
-  });
+  }
 }
