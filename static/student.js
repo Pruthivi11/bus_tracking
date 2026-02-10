@@ -59,43 +59,52 @@ function createBusMarker(route, lat, lng) {
 
 function fetchBusLocations(studentLat, studentLng) {
   const busNo = busNoEl.value?.trim();
+
   fetch("/get_locations")
     .then(r => r.json())
     .then(items => {
-      items.forEach(bus => {
-        if (busNo && busNo !== bus.route && busNo !== String(bus.route)) {
-          return;
-        }
-        const key = bus.route + "-" + bus.busType;
-        if (!busMarkers[key]) {
+      // Clear old bus markers
+      Object.values(busMarkers).forEach(m => m.remove());
+      busMarkers = {};
+
+      if (busNo) {
+        // Look for the specific bus
+        const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
+
+        if (bus) {
+          // Bus is active → show its marker
+          const key = bus.route + "-" + bus.busType;
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
-        } else {
-          busMarkers[key].setLngLat([bus.lng, bus.lat]);
-        }
 
-        // Check if student is within 5 meters of bus
-        if (studentLat && studentLng && !isOnboard) {
-          const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
-          if (dist <= 5) {
-            // Student onboard → notify backend
-            fetch("/onboard", {
-              method: "POST",
-              headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({
-                rollNo: rollNoEl.value,
-                busRoute: busNoEl.value,
-                onboard: true
-              })
-            });
+          // Check distance for onboard logic
+          if (studentLat && studentLng && !isOnboard) {
+            const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
+            if (dist <= 5) {
+              fetch("/onboard", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({
+                  rollNo: rollNoEl.value,
+                  busRoute: busNoEl.value,
+                  onboard: true
+                })
+              });
 
-            if (studentMarker) {
-              studentMarker.remove();
-              studentMarker = null;
+              if (studentMarker) {
+                studentMarker.remove();
+                studentMarker = null;
+              }
+              isOnboard = true;
             }
-            isOnboard = true;
           }
+        } else {
+          // Bus not active → only show student location
+          console.log("Bus not active, showing only student location");
         }
-      });
+      } else {
+        // No bus number entered → only show student location
+        console.log("No bus number entered, showing only student location");
+      }
     })
     .catch(() => {});
 }
