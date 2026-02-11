@@ -2,7 +2,7 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = "driver_secret"
@@ -88,7 +88,7 @@ def location():
             bus.lng = data["lng"]
             bus.bus_type = data["busType"]
             bus.timestamp = datetime.utcnow()
-            bus.active = True   # always mark active when updating
+            bus.active = True
         else:
             bus = BusLocation(
                 route=data["route"],
@@ -113,9 +113,9 @@ def end_trip():
     bus = BusLocation.query.filter_by(route=route).first()
     if bus:
         bus.active = False
-        # Optionally clear lat/lng so students don’t see stale location
         bus.lat = None
         bus.lng = None
+        bus.bus_type = None
         db.session.commit()
         return jsonify({"status": "ended", "msg": f"Bus {route} marked inactive"})
     else:
@@ -132,7 +132,17 @@ def student():
 
 @app.route("/get_locations")
 def get_locations():
-    # Only return buses that are active
+    # Auto‑inactive timeout: mark buses inactive if no update in last 60 seconds
+    timeout = datetime.utcnow() - timedelta(seconds=60)
+    stale_buses = BusLocation.query.filter(BusLocation.timestamp < timeout, BusLocation.active == True).all()
+    for bus in stale_buses:
+        bus.active = False
+        bus.lat = None
+        bus.lng = None
+    if stale_buses:
+        db.session.commit()
+
+    # Only return active buses
     locations = BusLocation.query.filter_by(active=True).all()
     return jsonify([
         {
@@ -141,7 +151,7 @@ def get_locations():
             "lat": l.lat,
             "lng": l.lng,
             "time": l.timestamp.isoformat()
-        } for l in locations if l.active
+        } for l in locations
     ])
 
 @app.route("/onboard", methods=["POST"])
