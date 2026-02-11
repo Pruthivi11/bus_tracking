@@ -8,11 +8,7 @@ app = Flask(__name__)
 app.secret_key = "driver_secret"
 CORS(app)
 
-# --- DB Config ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
-# For Render, replace with PostgreSQL connection string
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://USER:PASSWORD@HOST:5432/DBNAME'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -30,6 +26,7 @@ class BusLocation(db.Model):
     lat = db.Column(db.Float)
     lng = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    active = db.Column(db.Boolean, default=True)
 
 class Onboard(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -60,7 +57,7 @@ def driver_login():
 
 @app.route("/send_otp", methods=["POST"])
 def send_otp():
-    phone = request.json["phone"]
+    phone = request.json.get("phone")
     otp = "1234"  # demo OTP
     driver = Driver.query.filter_by(phone=phone).first()
     if not driver:
@@ -80,23 +77,49 @@ def driver():
 @app.route("/location", methods=["POST"])
 def location():
     data = request.json
-    if all(k in data for k in ("route", "busType", "lat", "lng", "time")):
+    if not data:
+        return jsonify({"status": "error", "msg": "No data received"}), 400
+
+    required = ("route", "busType", "lat", "lng", "time")
+    if all(k in data for k in required):
         bus = BusLocation.query.filter_by(route=data["route"]).first()
         if bus:
             bus.lat = data["lat"]
             bus.lng = data["lng"]
             bus.bus_type = data["busType"]
             bus.timestamp = datetime.utcnow()
+            bus.active = True   # always mark active when updating
         else:
             bus = BusLocation(
                 route=data["route"],
                 bus_type=data["busType"],
                 lat=data["lat"],
-                lng=data["lng"]
+                lng=data["lng"],
+                active=True
             )
             db.session.add(bus)
         db.session.commit()
-    return jsonify({"status": "ok"})
+        return jsonify({"status": "ok"})
+    else:
+        return jsonify({"status": "error", "msg": "Missing fields"}), 400
+
+@app.route("/end_trip", methods=["POST"])
+def end_trip():
+    data = request.json
+    if not data or "route" not in data:
+        return jsonify({"status": "error", "msg": "No route provided"}), 400
+
+    route = data["route"]
+    bus = BusLocation.query.filter_by(route=route).first()
+    if bus:
+        bus.active = False
+        # Optionally clear lat/lng so students don’t see stale location
+        bus.lat = None
+        bus.lng = None
+        db.session.commit()
+        return jsonify({"status": "ended", "msg": f"Bus {route} marked inactive"})
+    else:
+        return jsonify({"status": "error", "msg": f"No bus found for route {route}"}), 404
 
 @app.route("/logout")
 def logout():
@@ -109,7 +132,8 @@ def student():
 
 @app.route("/get_locations")
 def get_locations():
-    locations = BusLocation.query.all()
+    # Only return buses that are active
+    locations = BusLocation.query.filter_by(active=True).all()
     return jsonify([
         {
             "route": l.route,
@@ -117,15 +141,21 @@ def get_locations():
             "lat": l.lat,
             "lng": l.lng,
             "time": l.timestamp.isoformat()
-        } for l in locations
+        } for l in locations if l.active
     ])
 
 @app.route("/onboard", methods=["POST"])
 def onboard():
     data = request.json
-    roll_no = data["rollNo"]
-    bus_route = data["busRoute"]
-    onboard_flag = data["onboard"]
+    if not data:
+        return jsonify({"status": "error", "msg": "No data received"}), 400
+
+    roll_no = data.get("rollNo")
+    bus_route = data.get("busRoute")
+    onboard_flag = data.get("onboard")
+
+    if not roll_no or not bus_route:
+        return jsonify({"status": "error", "msg": "Missing rollNo or busRoute"}), 400
 
     record = Onboard.query.filter_by(roll_no=roll_no, bus_route=bus_route).first()
     if record:
