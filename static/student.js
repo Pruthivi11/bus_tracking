@@ -10,6 +10,9 @@ const busNoEl = document.getElementById('busNo');
 const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 
+// Message area for feedback
+const statusEl = document.getElementById('statusMsg');
+
 function initMap(center) {
   mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your real token
   map = new mapboxgl.Map({
@@ -72,7 +75,7 @@ function fetchBusLocations(studentLat, studentLng) {
         const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
         if (bus) {
-          // Bus is active → show its marker
+          statusEl.textContent = `Bus ${busNo} is active.`;
           const key = bus.route + "-" + bus.busType;
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
@@ -95,18 +98,21 @@ function fetchBusLocations(studentLat, studentLng) {
                 studentMarker = null;
               }
               isOnboard = true;
+              statusEl.textContent = `You are onboard Bus ${busNo}.`;
             }
           }
         } else {
           // Bus not active → only show student location
-          console.log("Bus not active, showing only student location");
+          statusEl.textContent = `Bus ${busNo} is not active. Showing only your location.`;
         }
       } else {
         // No bus number entered → only show student location
-        console.log("No bus number entered, showing only student location");
+        statusEl.textContent = "No bus number entered. Showing only your location.";
       }
     })
-    .catch(() => {});
+    .catch(() => {
+      statusEl.textContent = "Failed to fetch bus locations.";
+    });
 }
 
 showBtn.addEventListener('click', () => {
