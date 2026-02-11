@@ -1,22 +1,30 @@
-let map, busMarkers = {}, studentMarker = null, studentWatchId = null, pollInterval = null, isOnboard = false;
-const rollNoEl = document.getElementById("rollNo"),
-      busNoEl = document.getElementById("busNo"),
-      showBtn = document.getElementById("showMap"),
-      mapEl = document.getElementById("map"),
-      statusEl = document.getElementById("statusMsg");
+let map;
+let busMarkers = {};
+let studentMarker = null;
+let studentWatchId = null;
+let pollInterval = null;
+let isOnboard = false;
 
-function initMap(c) {
-  mapboxgl.accessToken = "pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ"; // replace with your real token
+const rollNoEl = document.getElementById('rollNo');
+const busNoEl = document.getElementById('busNo');
+const showBtn = document.getElementById('showMap');
+const mapEl = document.getElementById('map');
+
+// Message area for feedback
+const statusEl = document.getElementById('statusMsg');
+
+function initMap(center) {
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your real token
   map = new mapboxgl.Map({
-    container: "map",
-    style: "mapbox://styles/mapbox/streets-v11",
-    center: c || [80.2707, 13.0827],
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v11',
+    center: center || [80.2707, 13.0827],
     zoom: 14
   });
 }
 
 function placeStudentMarker(lat, lng) {
-  if (isOnboard) return;
+  if (isOnboard) return; // don't place marker if onboard
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -27,90 +35,129 @@ function placeStudentMarker(lat, lng) {
   }
 }
 
-// Haversine distance in meters
-function dist(a, b, c, d) {
-  const R = 6371000, t = x => x * Math.PI / 180;
-  const A = Math.sin(t(c - a) / 2) ** 2 +
-            Math.cos(t(a)) * Math.cos(t(c)) *
-            Math.sin(t(d - b) / 2) ** 2;
-  return 2 * R * Math.atan2(Math.sqrt(A), Math.sqrt(1 - A));
+// Haversine formula for distance in meters
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lat2 - lon1);
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }
 
-function busMarker(r, lat, lng) {
-  const e = document.createElement("div");
-  e.innerHTML = `<i class="fa-solid fa-bus" style="color:red"></i><div>${r}</div>`;
-  return new mapboxgl.Marker(e).setLngLat([lng, lat]).addTo(map);
+// Custom bus marker with Font Awesome icon + route number
+function createBusMarker(route, lat, lng) {
+  const el = document.createElement('div');
+  el.className = 'bus-marker';
+  el.innerHTML = `<i class="fa-solid fa-bus" style="color:red;font-size:20px;"></i>
+                  <div class="route-label">${route}</div>`;
+  return new mapboxgl.Marker(el)
+    .setLngLat([lng, lat])
+    .setPopup(new mapboxgl.Popup().setText(`Bus ${route}`))
+    .addTo(map);
 }
 
-function fetchBus(sl, sg) {
+function fetchBusLocations(studentLat, studentLng) {
+  const busNo = busNoEl.value?.trim();
+
   fetch("/get_locations")
-    .then(r => {
-      if (!r.ok) throw new Error("Network response was not ok");
-      return r.json();
-    })
-    .then(it => {
+    .then(r => r.json())
+    .then(items => {
       // Clear old bus markers
       Object.values(busMarkers).forEach(m => m.remove());
       busMarkers = {};
 
-      const b = busNoEl.value?.trim();
-      if (!b) {
-        statusEl.textContent = "Enter bus number";
-        return;
-      }
+      if (busNo) {
+        // Look for the specific bus
+        const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
-      const bus = it.find(x => String(x.route) === b);
-      if (!bus) {
-        statusEl.textContent = `Bus ${b} inactive`;
-        return;
-      }
+        if (bus) {
+          statusEl.textContent = `Bus ${busNo} is active.`;
+          const key = bus.route + "-" + bus.busType;
+          busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
-      statusEl.textContent = `Bus ${bus.route} active`;
-      busMarkers[b] = busMarker(bus.route, bus.lat, bus.lng);
+          // Check distance for onboard logic
+          if (studentLat && studentLng && !isOnboard) {
+            const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
+            if (dist <= 5) {
+              fetch("/onboard", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({
+                  rollNo: rollNoEl.value,
+                  busRoute: busNoEl.value,
+                  onboard: true
+                })
+              });
 
-      // Onboard logic
-      if (sl && sg && !isOnboard && dist(sl, sg, bus.lat, bus.lng) <= 5) {
-        fetch("/onboard", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rollNo: rollNoEl.value, busRoute: b, onboard: true })
-        });
-        studentMarker?.remove();
-        studentMarker = null;
-        isOnboard = true;
-        statusEl.textContent = `Onboard Bus ${b}`;
+              if (studentMarker) {
+                studentMarker.remove();
+                studentMarker = null;
+              }
+              isOnboard = true;
+              statusEl.textContent = `You are onboard Bus ${busNo}.`;
+            }
+          }
+        } else {
+          // Bus not active → only show student location
+          statusEl.textContent = `Bus ${busNo} is not active. Showing only your location.`;
+        }
+      } else {
+        // No bus number entered → only show student location
+        statusEl.textContent = "No bus number entered. Showing only your location.";
       }
     })
-    .catch(err => {
-      console.error("Error fetching bus locations:", err);
+    .catch(() => {
       statusEl.textContent = "Failed to fetch bus locations.";
     });
 }
 
-showBtn.onclick = () => {
-  if (!rollNoEl.value || !busNoEl.value) return alert("Enter details");
-  mapEl.style.display = "block";
-  if (!map) initMap();
+showBtn.addEventListener('click', () => {
+  const roll = rollNoEl.value?.trim();
+  const bus = busNoEl.value?.trim();
+
+  if (!roll || !bus) {
+    alert("Enter Roll Number and Bus Number.");
+    return;
+  }
+
+  mapEl.style.display = 'block';
+
+  // Initialize map immediately
+  if (!map) initMap([80.2707, 13.0827]);
   map.resize();
+
+  // Clear any old polling loop
   if (pollInterval) clearInterval(pollInterval);
+
+  // Reset flags
   isOnboard = false;
 
-  studentWatchId = navigator.geolocation.watchPosition(p => {
-    const { latitude, longitude } = p.coords;
-    map.setCenter([longitude, latitude]);
-    placeStudentMarker(latitude, longitude);
-    fetchBus(latitude, longitude);
-  }, err => {
-    alert("Unable to get your location: " + err.message);
-    fetchBus();
-  }, { enableHighAccuracy: true, maximumAge: 1000 });
+  // Start watching student location
+  studentWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude, longitude } = pos.coords;
+      map.setCenter([longitude, latitude]);
+      placeStudentMarker(latitude, longitude);
+      fetchBusLocations(latitude, longitude);
+    },
+    err => {
+      alert("Unable to get your location: " + err.message);
+      fetchBusLocations();
+    },
+    { enableHighAccuracy: true, maximumAge: 1000 }
+  );
 
+  // Poll bus locations every second
   pollInterval = setInterval(() => {
     if (studentMarker) {
-      const c = studentMarker.getLngLat();
-      fetchBus(c.lat, c.lng);
+      const coords = studentMarker.getLngLat();
+      fetchBusLocations(coords.lat, coords.lng);
     } else {
-      fetchBus();
+      fetchBusLocations();
     }
   }, 1000);
-};
+});
