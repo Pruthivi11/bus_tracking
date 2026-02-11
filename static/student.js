@@ -9,12 +9,10 @@ const rollNoEl = document.getElementById('rollNo');
 const busNoEl = document.getElementById('busNo');
 const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
-
-// Message area for feedback
 const statusEl = document.getElementById('statusMsg');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with your real token
+  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // replace with real token
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
@@ -24,7 +22,7 @@ function initMap(center) {
 }
 
 function placeStudentMarker(lat, lng) {
-  if (isOnboard) return; // don't place marker if onboard
+  if (isOnboard) return;
   if (!studentMarker) {
     studentMarker = new mapboxgl.Marker({ color: "blue" })
       .setLngLat([lng, lat])
@@ -35,12 +33,11 @@ function placeStudentMarker(lat, lng) {
   }
 }
 
-// Haversine formula for distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lat2 - lon1);
+  const dLon = toRad(lon2 - lon1);
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
             Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
             Math.sin(dLon/2) * Math.sin(dLon/2);
@@ -48,7 +45,6 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Custom bus marker with Font Awesome icon + route number
 function createBusMarker(route, lat, lng) {
   const el = document.createElement('div');
   el.className = 'bus-marker';
@@ -64,22 +60,24 @@ function fetchBusLocations(studentLat, studentLng) {
   const busNo = busNoEl.value?.trim();
 
   fetch("/get_locations")
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) throw new Error("Network error");
+      return r.json();
+    })
     .then(items => {
       // Clear old bus markers
       Object.values(busMarkers).forEach(m => m.remove());
       busMarkers = {};
 
       if (busNo) {
-        // Look for the specific bus
         const bus = items.find(b => b.route === busNo || String(b.route) === busNo);
 
         if (bus) {
-          statusEl.textContent = `Bus ${bus.route} (${bus.busType}) is active.`;
-          const key = bus.route + "-" + bus.busType;
+          statusEl.textContent = `Bus ${bus.route} (${bus.busType || "Unknown"}) is active.`;
+          const key = bus.route + "-" + (bus.busType || "");
           busMarkers[key] = createBusMarker(bus.route, bus.lat, bus.lng);
 
-          // Check distance for onboard logic
+          // Onboard logic
           if (studentLat && studentLng && !isOnboard) {
             const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
             if (dist <= 5) {
@@ -102,15 +100,14 @@ function fetchBusLocations(studentLat, studentLng) {
             }
           }
         } else {
-          // Bus not active → only show student location
           statusEl.textContent = `Bus ${busNo} is not active. Showing only your location.`;
         }
       } else {
-        // No bus number entered → only show student location
         statusEl.textContent = "No bus number entered. Showing only your location.";
       }
     })
-    .catch(() => {
+    .catch(err => {
+      console.error("Error fetching bus locations:", err);
       statusEl.textContent = "Failed to fetch bus locations.";
     });
 }
@@ -126,17 +123,13 @@ showBtn.addEventListener('click', () => {
 
   mapEl.style.display = 'block';
 
-  // Initialize map immediately
   if (!map) initMap([80.2707, 13.0827]);
   map.resize();
 
-  // Clear any old polling loop
   if (pollInterval) clearInterval(pollInterval);
 
-  // Reset flags
   isOnboard = false;
 
-  // Start watching student location
   studentWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
@@ -151,7 +144,6 @@ showBtn.addEventListener('click', () => {
     { enableHighAccuracy: true, maximumAge: 1000 }
   );
 
-  // Poll bus locations every second
   pollInterval = setInterval(() => {
     if (studentMarker) {
       const coords = studentMarker.getLngLat();
