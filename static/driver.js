@@ -19,65 +19,55 @@ function startTrip() {
   }
 
   if (!navigator.geolocation) {
-    alert("Geolocation not supported by your browser.");
+    alert("Geolocation not supported.");
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
-    pos => {
+    () => {
+
+      // 🔹 Activate trip in backend
+      fetch("/start_trip", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ route: route, busType: busType })
+      });
+
       isTripActive = true;
 
-      // Start continuous tracking
       watchId = navigator.geolocation.watchPosition(
-        p => {
-          const data = {
-            route: route,
-            busType: busType,
-            lat: p.coords.latitude,
-            lng: p.coords.longitude,
-            time: Date.now()
-          };
-
+        pos => {
           fetch("/location", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-          }).catch(err => {
-            console.warn("Location send failed:", err);
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              route: route,
+              busType: busType,
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              time: Date.now()
+            })
           });
-
         },
-        err => {
-          console.warn("watchPosition error:", err);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000
-        }
+        err => console.warn(err),
+        { enableHighAccuracy: true, maximumAge: 1000 }
       );
 
-      alert("Trip started. Location sharing active.");
+      alert("Trip Started.");
     },
-    err => {
-      alert("Unable to get location: " + err.message);
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 10000
-    }
+    err => alert("Location error: " + err.message),
+    { enableHighAccuracy: true }
   );
 }
 
 function endTrip() {
-  const routeEl = document.getElementById('route');
-  const route = routeEl.value.trim();
+  const route = document.getElementById('route').value.trim();
 
   if (!route) {
-    alert("Enter route number before ending trip.");
+    alert("Enter route number.");
     return;
   }
 
-  // Stop GPS tracking
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
@@ -85,38 +75,28 @@ function endTrip() {
 
   isTripActive = false;
 
-  // Inform backend to remove bus from active list
+  // 🔹 Mark bus inactive instead of deleting
   fetch("/end_trip", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ route: route })
-  })
-  .then(res => res.json())
-  .then(() => {
-    alert("Trip Ended. Bus is now inactive.");
-  })
-  .catch(() => {
-    alert("Trip ended locally, but server update failed.");
+  }).then(() => {
+    alert("Trip Ended. Bus marked inactive.");
   });
 }
 
 function logout() {
-  const routeEl = document.getElementById('route');
-  const route = routeEl.value.trim();
+  const route = document.getElementById('route').value.trim();
 
-  // Stop tracking if active
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
 
-  isTripActive = false;
-
-  // Also remove bus if trip was active
   if (route) {
     fetch("/end_trip", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ route: route })
     }).finally(() => {
       window.location.href = "/logout";
