@@ -3,8 +3,6 @@ from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from dotenv import load_dotenv
-load_dotenv()
 import os
 
 app = Flask(__name__)
