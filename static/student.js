@@ -10,7 +10,8 @@ const mapEl = document.getElementById('map');
 const statusEl = document.getElementById('statusMsg');
 
 function initMap(center) {
-  mapboxgl.accessToken = 'pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ'; // your real key
+  mapboxgl.accessToken = "YOUR_MAPBOX_PUBLIC_TOKEN";
+
 
   map = new mapboxgl.Map({
     container: 'map',
