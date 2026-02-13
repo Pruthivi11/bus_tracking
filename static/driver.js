@@ -4,13 +4,16 @@ let tripActive = false;
 const tripStatus = document.getElementById("tripStatus");
 const startBtn = document.getElementById("startBtn");
 const endBtn = document.getElementById("endBtn");
+const card = document.querySelector(".card");
 
 function setStatus(text, color) {
   tripStatus.textContent = text;
   tripStatus.style.background = color;
+  card.style.borderTopColor = color;
 }
 
 function startTrip() {
+
   const route = document.getElementById("route").value.trim();
   const busType = document.getElementById("busType").value;
 
@@ -21,7 +24,8 @@ function startTrip() {
 
   tripActive = true;
 
-  setStatus("TRIP STARTED", "#007bff"); // 🔵 blue active
+  setStatus("TRIP STARTED", "#09f443");
+
   startBtn.disabled = true;
   endBtn.disabled = false;
 
@@ -29,18 +33,15 @@ function startTrip() {
 
     if (!tripActive) return;
 
-    const data = {
-      route: route,
-      busType: busType,
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      time: new Date().toISOString()
-    };
-
     fetch("/location", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
+      body: JSON.stringify({
+        route: route,
+        busType: busType,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      })
     }).catch(err => console.log("Location send error:", err));
 
   }, err => {
@@ -54,11 +55,13 @@ function startTrip() {
 }
 
 function endTrip() {
+
   const route = document.getElementById("route").value.trim();
 
   tripActive = false;
 
-  setStatus("TRIP ENDED", "#dc3545"); // 🔴 red
+  setStatus("TRIP ENDED", "#dc3545");
+
   startBtn.disabled = false;
   endBtn.disabled = true;
 
@@ -75,5 +78,6 @@ function endTrip() {
 }
 
 function logout() {
+  endTrip();
   window.location.href = "/logout";
 }

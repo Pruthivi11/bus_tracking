@@ -9,9 +9,24 @@ const showBtn = document.getElementById('showMap');
 const mapEl = document.getElementById('map');
 const statusEl = document.getElementById('statusMsg');
 
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+function updateBusStatus(bus, busNo) {
+  if (!bus.active) {
+    setStatus(`🔴 Bus ${busNo} not active`);
+  }
+  else if (bus.lastSeen > 20) {
+    setStatus(`🟡 Bus ${busNo} updating… (possible network delay)`);
+  }
+  else {
+    setStatus(`🟢 Bus ${busNo} active`);
+  }
+}
+
 function initMap(center) {
   mapboxgl.accessToken = "pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ";
-
 
   map = new mapboxgl.Map({
     container: 'map',
@@ -43,8 +58,8 @@ function getDistance(lat1, lon1, lat2, lon2) {
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
@@ -63,6 +78,7 @@ function createBusMarker(route, lat, lng) {
 }
 
 function fetchBusLocations(studentLat, studentLng) {
+
   const busNo = busNoEl.value.trim();
 
   fetch("/get_locations")
@@ -76,17 +92,15 @@ function fetchBusLocations(studentLat, studentLng) {
 
       if (!bus) {
         if (!isOnboard) {
-          statusEl.textContent = `Bus ${busNo} is not active.`;
+          setStatus(`🔴 Bus ${busNo} not active`);
         }
         return;
       }
 
-      busMarkers[bus.route] =
-        createBusMarker(bus.route, bus.lat, bus.lng);
+      busMarkers[bus.route] = createBusMarker(bus.route, bus.lat, bus.lng);
 
       if (!isOnboard) {
-        statusEl.textContent =
-          `Bus ${busNo} (${bus.busType}) is active.`;
+        updateBusStatus(bus, busNo);
       }
 
       // Onboard detection
@@ -95,13 +109,13 @@ function fetchBusLocations(studentLat, studentLng) {
         typeof studentLng === "number" &&
         !isOnboard
       ) {
-        const dist =
-          getDistance(studentLat, studentLng, bus.lat, bus.lng);
+        const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
 
         if (dist <= 20) {
+
           fetch("/onboard", {
             method: "POST",
-            headers: {"Content-Type":"application/json"},
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               rollNo: rollNoEl.value,
               busRoute: busNo,
@@ -115,13 +129,15 @@ function fetchBusLocations(studentLat, studentLng) {
           }
 
           isOnboard = true;
-          statusEl.textContent = `ONBOARD Bus ${busNo}`;
+          setStatus(`🟢 ONBOARD Bus ${busNo}`);
         }
       }
-    });
+    })
+    .catch(() => setStatus("⚠️ Failed to fetch bus locations"));
 }
 
 showBtn.addEventListener('click', () => {
+
   const roll = rollNoEl.value.trim();
   const bus = busNoEl.value.trim();
 
