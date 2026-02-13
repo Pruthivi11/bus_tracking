@@ -3,12 +3,11 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
-import random
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
-# ✅ Render + HTTPS session fix
+# ✅ Render HTTPS session fix
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 
@@ -52,14 +51,34 @@ class Onboard(db.Model):
 def home():
     return render_template("home.html")
 
-@app.route("/driver_login")
+# 🔐 LOGIN PAGE
+@app.route("/login", methods=["GET", "POST"])
 def driver_login():
-    return render_template("driver_login.html")
 
+    if request.method == "POST":
+        phone = request.form.get("phone")
+        otp = request.form.get("otp")
+
+        if not phone or not otp:
+            return render_template("login.html", error="Enter phone and OTP")
+
+        driver = Driver.query.filter_by(phone=phone, otp=otp).first()
+
+        if driver:
+            driver.logged_in = True
+            db.session.commit()
+            session["driver_phone"] = phone
+            return redirect("/driver")
+        else:
+            return render_template("login.html", error="Invalid OTP")
+
+    return render_template("login.html")
+
+# DRIVER DASHBOARD
 @app.route("/driver")
 def driver():
     if "driver_phone" not in session:
-        return redirect("/driver_login")
+        return redirect("/login")
     return render_template("driver.html")
 
 @app.route("/student")
@@ -72,49 +91,32 @@ def logout():
     return redirect("/")
 
 # -----------------
-# MOCK OTP LOGIN
+# MOCK OTP (1234)
 # -----------------
 
 @app.route("/send_otp", methods=["POST"])
 def send_otp():
-    phone = request.json.get("phone")
+    data = request.get_json(silent=True) or {}
+    phone = data.get("phone")
 
     if not phone:
         return jsonify({"error": "Phone required"}), 400
 
-    otp = str(random.randint(1000, 9999))
+    otp = "1234"  # demo OTP
 
     driver = Driver.query.filter_by(phone=phone).first()
 
     if not driver:
-        driver = Driver(phone=phone, otp=otp)
+        driver = Driver(phone=phone, otp=otp, logged_in=False)
         db.session.add(driver)
     else:
         driver.otp = otp
 
     db.session.commit()
-
-    print(f"OTP for {phone}: {otp}")  # visible in Render logs
-
-    return jsonify({"status": "otp sent"})
-
-@app.route("/verify_otp", methods=["POST"])
-def verify_otp():
-    phone = request.json.get("phone")
-    otp = request.json.get("otp")
-
-    driver = Driver.query.filter_by(phone=phone, otp=otp).first()
-
-    if driver:
-        session["driver_phone"] = phone
-        driver.logged_in = True
-        db.session.commit()
-        return jsonify({"status": "success"})
-    else:
-        return jsonify({"error": "Invalid OTP"}), 401
+    return jsonify({"msg": f"OTP sent ({otp} for demo)"})
 
 # -----------------------------
-# LOCATION UPDATE (SET ACTIVE)
+# LOCATION UPDATE
 # -----------------------------
 
 @app.route("/location", methods=["POST"])
@@ -191,8 +193,7 @@ def get_locations():
                 if last_seen > 60:
                     bus.active = False
                 else:
-                    if bus.active:
-                        bus.active = True
+                    bus.active = True
 
                 result.append({
                     "route": bus.route,
@@ -208,7 +209,7 @@ def get_locations():
 
     except Exception as e:
         print("GET LOCATION ERROR:", e)
-        return jsonify([])  # 🔧 prevents fetch crash
+        return jsonify([])
 
 # -----------------------------
 # ONBOARD
