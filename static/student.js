@@ -15,13 +15,13 @@ function setStatus(text) {
 
 function updateBusStatus(bus, busNo) {
   if (!bus.active) {
-    setStatus(`🔴 Bus ${busNo} not active`);
+    setStatus(`🔴 Bus ${busNo} is not active`);
   }
   else if (bus.lastSeen > 20) {
     setStatus(`🟡 Bus ${busNo} updating… (possible network delay)`);
   }
   else {
-    setStatus(`🟢 Bus ${busNo} active`);
+    setStatus(`🟢 Bus ${busNo}(${bus.busType}) is active`);
   }
 }
 
@@ -92,7 +92,7 @@ function fetchBusLocations(studentLat, studentLng) {
 
       if (!bus) {
         if (!isOnboard) {
-          setStatus(`🔴 Bus ${busNo} not active`);
+          setStatus(`🔴 Bus ${busNo} is not active`);
         }
         return;
       }
@@ -129,7 +129,7 @@ function fetchBusLocations(studentLat, studentLng) {
           }
 
           isOnboard = true;
-          setStatus(`🟢 ONBOARD Bus ${busNo}`);
+          setStatus(`🟢 ONBOARD Bus ${busNo}(${bus.busType})`);
         }
       }
     })

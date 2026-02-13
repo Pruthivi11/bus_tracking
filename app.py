@@ -170,7 +170,14 @@ def end_trip():
 
     if bus:
         bus.active = False
-        db.session.commit()
+
+    # 🔴 Clear onboard students for this bus
+        Onboard.query.filter_by(bus_route=route).update({
+            "onboard": False,
+            "timestamp": datetime.utcnow()
+    })
+
+    db.session.commit()
 
     return jsonify({"status": "trip ended"})
 
@@ -191,7 +198,13 @@ def get_locations():
                 last_seen = int(diff.total_seconds())
 
                 if last_seen > 60:
-                    bus.active = False
+                    if bus.active:
+                        bus.active = False
+                        # 🔴 Auto clear onboard on timeout
+                        Onboard.query.filter_by(bus_route=bus.route).update({
+                        "onboard": False,
+                        "timestamp": datetime.utcnow()
+                    })
                 else:
                     bus.active = True
 
