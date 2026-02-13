@@ -3,9 +3,15 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+import random
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
+
+# ✅ Render + HTTPS session fix
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+
 CORS(app)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
@@ -39,12 +45,16 @@ class Onboard(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
 # -----------------
-# ROUTES
+# PAGES
 # -----------------
 
 @app.route("/")
 def home():
     return render_template("home.html")
+
+@app.route("/driver_login")
+def driver_login():
+    return render_template("driver_login.html")
 
 @app.route("/driver")
 def driver():
@@ -56,6 +66,53 @@ def driver():
 def student():
     return render_template("student.html")
 
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+# -----------------
+# MOCK OTP LOGIN
+# -----------------
+
+@app.route("/send_otp", methods=["POST"])
+def send_otp():
+    phone = request.json.get("phone")
+
+    if not phone:
+        return jsonify({"error": "Phone required"}), 400
+
+    otp = str(random.randint(1000, 9999))
+
+    driver = Driver.query.filter_by(phone=phone).first()
+
+    if not driver:
+        driver = Driver(phone=phone, otp=otp)
+        db.session.add(driver)
+    else:
+        driver.otp = otp
+
+    db.session.commit()
+
+    print(f"OTP for {phone}: {otp}")  # visible in Render logs
+
+    return jsonify({"status": "otp sent"})
+
+@app.route("/verify_otp", methods=["POST"])
+def verify_otp():
+    phone = request.json.get("phone")
+    otp = request.json.get("otp")
+
+    driver = Driver.query.filter_by(phone=phone, otp=otp).first()
+
+    if driver:
+        session["driver_phone"] = phone
+        driver.logged_in = True
+        db.session.commit()
+        return jsonify({"status": "success"})
+    else:
+        return jsonify({"error": "Invalid OTP"}), 401
+
 # -----------------------------
 # LOCATION UPDATE (SET ACTIVE)
 # -----------------------------
@@ -64,30 +121,39 @@ def student():
 def location():
     data = request.json
 
-    if all(k in data for k in ("route", "busType", "lat", "lng")):
+    try:
+        if all(k in data for k in ("route", "busType", "lat", "lng")):
 
-        bus = BusLocation.query.filter_by(route=data["route"]).first()
+            bus = BusLocation.query.filter_by(route=data["route"]).first()
 
-        if bus:
-            bus.lat = data["lat"]
-            bus.lng = data["lng"]
-            bus.bus_type = data["busType"]
-            bus.timestamp = datetime.utcnow()
-            bus.active = True  # ✅ auto reactivate
-        else:
-            bus = BusLocation(
-                route=data["route"],
-                bus_type=data["busType"],
-                lat=data["lat"],
-                lng=data["lng"],
-                timestamp=datetime.utcnow(),
-                active=True
-            )
-            db.session.add(bus)
+            # ❌ Ignore late GPS after end trip
+            if bus and not bus.active:
+                return jsonify({"status": "trip ended, ignore location"})
 
-        db.session.commit()
+            if bus:
+                bus.lat = data["lat"]
+                bus.lng = data["lng"]
+                bus.bus_type = data["busType"]
+                bus.timestamp = datetime.utcnow()
+                bus.active = True
+            else:
+                bus = BusLocation(
+                    route=data["route"],
+                    bus_type=data["busType"],
+                    lat=data["lat"],
+                    lng=data["lng"],
+                    timestamp=datetime.utcnow(),
+                    active=True
+                )
+                db.session.add(bus)
 
-    return jsonify({"status": "ok"})
+            db.session.commit()
+
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        print("LOCATION ERROR:", e)
+        return jsonify({"error": "location failed"}), 500
 
 # -----------------------------
 # END TRIP
@@ -113,30 +179,36 @@ def end_trip():
 @app.route("/get_locations")
 def get_locations():
 
-    buses = BusLocation.query.all()
-    result = []
+    try:
+        buses = BusLocation.query.all()
+        result = []
 
-    for bus in buses:
-        if bus.timestamp:
-            diff = datetime.utcnow() - bus.timestamp
-            last_seen = int(diff.total_seconds())
+        for bus in buses:
+            if bus.timestamp:
+                diff = datetime.utcnow() - bus.timestamp
+                last_seen = int(diff.total_seconds())
 
-            if last_seen > 60:
-                bus.active = False
-            else:
-                bus.active = True
+                if last_seen > 60:
+                    bus.active = False
+                else:
+                    if bus.active:
+                        bus.active = True
 
-            result.append({
-                "route": bus.route,
-                "busType": bus.bus_type,
-                "lat": bus.lat,
-                "lng": bus.lng,
-                "lastSeen": last_seen,
-                "active": bus.active
-            })
+                result.append({
+                    "route": bus.route,
+                    "busType": bus.bus_type,
+                    "lat": bus.lat,
+                    "lng": bus.lng,
+                    "lastSeen": last_seen,
+                    "active": bus.active
+                })
 
-    db.session.commit()
-    return jsonify(result)
+        db.session.commit()
+        return jsonify(result)
+
+    except Exception as e:
+        print("GET LOCATION ERROR:", e)
+        return jsonify([])  # 🔧 prevents fetch crash
 
 # -----------------------------
 # ONBOARD
@@ -145,33 +217,40 @@ def get_locations():
 @app.route("/onboard", methods=["POST"])
 def onboard():
     data = request.json
-    roll_no = data["rollNo"]
-    bus_route = data["busRoute"]
-    onboard_flag = data["onboard"]
 
-    bus = BusLocation.query.filter_by(route=bus_route).first()
+    try:
+        roll_no = data["rollNo"]
+        bus_route = data["busRoute"]
+        onboard_flag = data["onboard"]
 
-    if not bus or not bus.active:
-        onboard_flag = False  # force off if inactive
+        bus = BusLocation.query.filter_by(route=bus_route).first()
 
-    record = Onboard.query.filter_by(
-        roll_no=roll_no,
-        bus_route=bus_route
-    ).first()
+        if not bus or not bus.active:
+            onboard_flag = False
 
-    if record:
-        record.onboard = onboard_flag
-        record.timestamp = datetime.utcnow()
-    else:
-        record = Onboard(
+        record = Onboard.query.filter_by(
             roll_no=roll_no,
-            bus_route=bus_route,
-            onboard=onboard_flag
-        )
-        db.session.add(record)
+            bus_route=bus_route
+        ).first()
 
-    db.session.commit()
-    return jsonify({"status": "ok"})
+        if record:
+            record.onboard = onboard_flag
+            record.timestamp = datetime.utcnow()
+        else:
+            record = Onboard(
+                roll_no=roll_no,
+                bus_route=bus_route,
+                onboard=onboard_flag
+            )
+            db.session.add(record)
+
+        db.session.commit()
+
+        return jsonify({"status": "ok", "onboard": onboard_flag})
+
+    except Exception as e:
+        print("ONBOARD ERROR:", e)
+        return jsonify({"error": "onboard failed"}), 500
 
 # -----------------------------
 
