@@ -1,107 +1,83 @@
 let watchId = null;
-let isTripActive = false;
+let tripActive = false;
+
+const tripCard = document.getElementById("tripStatusCard");
+const statusDot = document.getElementById("statusDot");
+const startBtn = document.getElementById("startBtn");
+const endBtn = document.getElementById("endBtn");
+
+function updateCard(text, color, online = false) {
+    tripCard.childNodes[0].nodeValue = text + " ";
+    tripCard.style.backgroundColor = color;
+
+    if (online) {
+        statusDot.classList.add("online");
+    } else {
+        statusDot.classList.remove("online");
+    }
+}
 
 function startTrip() {
-  const routeEl = document.getElementById('route');
-  const busTypeEl = document.getElementById('busType');
+    const route = document.getElementById("route").value.trim();
+    const busType = document.getElementById("busType").value.trim();
 
-  const route = routeEl.value.trim();
-  const busType = busTypeEl.value;
+    if (!route || !busType) {
+        alert("Enter route and bus type");
+        return;
+    }
 
-  if (!route || !busType) {
-    alert("Enter route & bus type");
-    return;
-  }
+    tripActive = true;
 
-  if (isTripActive) {
-    alert("Trip already active.");
-    return;
-  }
+    updateCard("TRIP STARTED", "#28a745", true);
 
-  if (!navigator.geolocation) {
-    alert("Geolocation not supported.");
-    return;
-  }
+    startBtn.disabled = true;
+    endBtn.disabled = false;
 
-  navigator.geolocation.getCurrentPosition(
-    () => {
+    watchId = navigator.geolocation.watchPosition(position => {
 
-      // 🔹 Activate trip in backend
-      fetch("/start_trip", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ route: route, busType: busType })
-      });
+        if (!tripActive) return;
 
-      isTripActive = true;
+        const data = {
+            route: route,
+            busType: busType,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+        };
 
-      watchId = navigator.geolocation.watchPosition(
-        pos => {
-          fetch("/location", {
+        fetch("/location", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-              route: route,
-              busType: busType,
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              time: Date.now()
-            })
-          });
-        },
-        err => console.warn(err),
-        { enableHighAccuracy: true, maximumAge: 1000 }
-      );
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        }).catch(err => console.log("Location error:", err));
 
-      alert("Trip Started.");
-    },
-    err => alert("Location error: " + err.message),
-    { enableHighAccuracy: true }
-  );
+    }, err => {
+        console.log("GPS error:", err);
+        alert("Enable GPS for tracking");
+    }, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000
+    });
 }
 
 function endTrip() {
-  const route = document.getElementById('route').value.trim();
+    const route = document.getElementById("route").value.trim();
 
-  if (!route) {
-    alert("Enter route number.");
-    return;
-  }
+    tripActive = false;
 
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
+    updateCard("TRIP ENDED", "#dc3545", false);
 
-  isTripActive = false;
+    startBtn.disabled = false;
+    endBtn.disabled = true;
 
-  // 🔹 Mark bus inactive instead of deleting
-  fetch("/end_trip", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({ route: route })
-  }).then(() => {
-    alert("Trip Ended. Bus marked inactive.");
-  });
-}
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
 
-function logout() {
-  const route = document.getElementById('route').value.trim();
-
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
-
-  if (route) {
     fetch("/end_trip", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ route: route })
-    }).finally(() => {
-      window.location.href = "/logout";
-    });
-  } else {
-    window.location.href = "/logout";
-  }
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ route: route })
+    }).catch(err => console.log("End trip error:", err));
 }

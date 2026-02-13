@@ -44,6 +44,17 @@ body {
   color: #0077cc;
 }
 
+.trip-card {
+    padding: 15px;
+    font-size: 18px;
+    text-align: center;
+    background: #6c757d;
+    color: white;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+
 /* Inputs & Buttons */
 input, select, button {
   width: 100%;
@@ -77,6 +88,7 @@ button:hover {
   border: 2px solid #0077cc;
   border-radius: 10px;
 }
+
 
 /* Responsive tweaks */
 @media (max-width: 600px) {
