@@ -52,7 +52,7 @@ def home():
     return render_template("home.html")
 
 # 🔐 LOGIN PAGE
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/driver_login", methods=["GET", "POST"])
 def driver_login():
 
     if request.method == "POST":
@@ -78,7 +78,7 @@ def driver_login():
 @app.route("/driver")
 def driver():
     if "driver_phone" not in session:
-        return redirect("/login")
+        return redirect("/driver_login")
     return render_template("driver.html")
 
 @app.route("/student")
