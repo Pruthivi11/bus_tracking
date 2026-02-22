@@ -37,7 +37,7 @@ with app.app_context():
 
 @app.route("/")
 def home():
-    return redirect("/student_login")
+    return redirect("home.html")
 
 # ---------- DRIVER LOGIN PAGE ----------
 @app.route("/driver_login", methods=["GET", "POST"])
