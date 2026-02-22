@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+import random
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
@@ -26,6 +27,7 @@ class Driver(db.Model):
     phone = db.Column(db.String(20), unique=True, nullable=False)
     otp = db.Column(db.String(10))
     logged_in = db.Column(db.Boolean, default=False)
+    route = db.Column(db.String(20))  # 🆕 store current route
 
 class BusLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -51,7 +53,6 @@ class Onboard(db.Model):
 def home():
     return render_template("home.html")
 
-# 🔐 LOGIN PAGE
 @app.route("/driver_login", methods=["GET", "POST"])
 def driver_login():
 
@@ -74,7 +75,6 @@ def driver_login():
 
     return render_template("login.html")
 
-# DRIVER DASHBOARD
 @app.route("/driver")
 def driver():
     if "driver_phone" not in session:
@@ -87,6 +87,25 @@ def student():
 
 @app.route("/logout")
 def logout():
+    # 🆕 auto end trip on logout
+    phone = session.get("driver_phone")
+
+    if phone:
+        driver = Driver.query.filter_by(phone=phone).first()
+        if driver and driver.route:
+            bus = BusLocation.query.filter_by(route=driver.route).first()
+            if bus:
+                bus.active = False
+
+                Onboard.query.filter_by(bus_route=driver.route).update({
+                    "onboard": False,
+                    "timestamp": datetime.utcnow()
+                })
+
+            driver.logged_in = False
+            driver.route = None
+            db.session.commit()
+
     session.clear()
     return redirect("/")
 
@@ -102,7 +121,7 @@ def send_otp():
     if not phone:
         return jsonify({"error": "Phone required"}), 400
 
-    otp = "1234"  # demo OTP
+    otp = "1234"  # ✅ fixed demo OTP
 
     driver = Driver.query.filter_by(phone=phone).first()
 
@@ -113,7 +132,39 @@ def send_otp():
         driver.otp = otp
 
     db.session.commit()
-    return jsonify({"msg": f"OTP sent ({otp} for demo)"})
+    return jsonify({"msg": f"OTP sent ({otp})"})
+
+# -----------------------------
+# START TRIP (save route to driver)
+# -----------------------------
+
+@app.route("/start_trip", methods=["POST"])
+def start_trip():
+    data = request.json
+    route = data.get("route")
+    bus_type = data.get("busType")
+
+    phone = session.get("driver_phone")
+
+    if not phone:
+        return jsonify({"error": "Not logged in"}), 401
+
+    driver = Driver.query.filter_by(phone=phone).first()
+    driver.route = route
+
+    bus = BusLocation.query.filter_by(route=route).first()
+
+    if not bus:
+        bus = BusLocation(route=route, bus_type=bus_type, active=True)
+        db.session.add(bus)
+    else:
+        bus.bus_type = bus_type
+        bus.active = True
+        bus.timestamp = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify({"status": "trip started"})
 
 # -----------------------------
 # LOCATION UPDATE
@@ -124,33 +175,30 @@ def location():
     data = request.json
 
     try:
-        if all(k in data for k in ("route", "busType", "lat", "lng")):
+        route = data.get("route")
+        lat = data.get("lat")
+        lng = data.get("lng")
+        bus_type = data.get("busType")
 
-            bus = BusLocation.query.filter_by(route=data["route"]).first()
+        if not route or lat is None or lng is None:
+            return jsonify({"error": "invalid data"}), 400
 
-            # ❌ Ignore late GPS after end trip
-            if bus and not bus.active:
-                return jsonify({"status": "trip ended, ignore location"})
+        bus = BusLocation.query.filter_by(route=route).first()
 
-            if bus:
-                bus.lat = data["lat"]
-                bus.lng = data["lng"]
-                bus.bus_type = data["busType"]
-                bus.timestamp = datetime.utcnow()
-                bus.active = True
-            else:
-                bus = BusLocation(
-                    route=data["route"],
-                    bus_type=data["busType"],
-                    lat=data["lat"],
-                    lng=data["lng"],
-                    timestamp=datetime.utcnow(),
-                    active=True
-                )
-                db.session.add(bus)
+        if bus and not bus.active:
+            return jsonify({"status": "trip ended, ignore location"})
 
-            db.session.commit()
+        if not bus:
+            bus = BusLocation(route=route, bus_type=bus_type, lat=lat, lng=lng, active=True)
+            db.session.add(bus)
+        else:
+            bus.lat = lat
+            bus.lng = lng
+            bus.bus_type = bus_type
+            bus.timestamp = datetime.utcnow()
+            bus.active = True
 
+        db.session.commit()
         return jsonify({"status": "ok"})
 
     except Exception as e:
@@ -171,18 +219,25 @@ def end_trip():
     if bus:
         bus.active = False
 
-    # 🔴 Clear onboard students for this bus
+        # 🔴 Clear onboard students
         Onboard.query.filter_by(bus_route=route).update({
             "onboard": False,
             "timestamp": datetime.utcnow()
-    })
+        })
+
+    # 🆕 clear driver route
+    phone = session.get("driver_phone")
+    if phone:
+        driver = Driver.query.filter_by(phone=phone).first()
+        if driver:
+            driver.route = None
+            driver.logged_in = False
 
     db.session.commit()
-
     return jsonify({"status": "trip ended"})
 
 # -----------------------------
-# HEARTBEAT + STATUS LOGIC
+# GET LOCATIONS + TIMEOUT LOGIC
 # -----------------------------
 
 @app.route("/get_locations")
@@ -193,29 +248,29 @@ def get_locations():
         result = []
 
         for bus in buses:
+            last_seen = None
+
             if bus.timestamp:
                 diff = datetime.utcnow() - bus.timestamp
                 last_seen = int(diff.total_seconds())
 
-                if last_seen > 60:
-                    if bus.active:
-                        bus.active = False
-                        # 🔴 Auto clear onboard on timeout
-                        Onboard.query.filter_by(bus_route=bus.route).update({
+                # ⏱ timeout after 60s
+                if last_seen > 60 and bus.active:
+                    bus.active = False
+
+                    Onboard.query.filter_by(bus_route=bus.route).update({
                         "onboard": False,
                         "timestamp": datetime.utcnow()
                     })
-                else:
-                    bus.active = True
 
-                result.append({
-                    "route": bus.route,
-                    "busType": bus.bus_type,
-                    "lat": bus.lat,
-                    "lng": bus.lng,
-                    "lastSeen": last_seen,
-                    "active": bus.active
-                })
+            result.append({
+                "route": bus.route,
+                "busType": bus.bus_type,
+                "lat": bus.lat,
+                "lng": bus.lng,
+                "lastSeen": last_seen,
+                "active": bus.active
+            })
 
         db.session.commit()
         return jsonify(result)
@@ -233,9 +288,12 @@ def onboard():
     data = request.json
 
     try:
-        roll_no = data["rollNo"]
-        bus_route = data["busRoute"]
-        onboard_flag = data["onboard"]
+        roll_no = data.get("rollNo")
+        bus_route = data.get("busRoute")
+        onboard_flag = data.get("onboard")
+
+        if not roll_no or not bus_route:
+            return jsonify({"error": "invalid data"}), 400
 
         bus = BusLocation.query.filter_by(route=bus_route).first()
 
