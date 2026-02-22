@@ -2,28 +2,32 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Bus Tracking System</title>
-  <!-- Responsive scaling for mobile -->
+  <title>Bus Tracking System - Driver Login</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Link to shared stylesheet -->
   <link rel="stylesheet" href="/static/style.css">
-  <!-- Mapbox CSS (only needed in student.html) -->
-  <!-- <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" /> -->
 </head>
 <body>
+
 <header class="navbar">
   <h1>Bus Tracking System</h1>
 </header>
 
 <div class="card">
   <h2>Driver Login</h2>
-  <form method="POST" id="loginForm">
+
+  <!-- OTP STATUS -->
+  <p id="otpStatus" style="color: green;"></p>
+
+  <form method="POST" action="/driver_login" id="loginForm">
+    
     <label for="phone">Phone Number</label>
     <input name="phone" id="phone" placeholder="Phone Number" required>
-    <button type="button" onclick="sendOTP()">Send OTP</button>
+
+    <button type="button" id="otpBtn" onclick="sendOTP()">Send OTP</button>
 
     <label for="otp">Enter OTP</label>
     <input name="otp" id="otp" placeholder="Enter OTP" required>
+
     <button type="submit">Login</button>
   </form>
 </div>
@@ -33,15 +37,44 @@
 </footer>
 
 <script>
-function sendOTP() {
-  const val = document.getElementById('phone').value;
-  if (!val) { alert('Enter phone number'); return; }
-  fetch("/send_otp", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({phone: val})
-  }).then(r => r.json()).then(d => alert(d.msg));
+async function sendOTP() {
+  const phone = document.getElementById('phone').value;
+  const status = document.getElementById('otpStatus');
+  const btn = document.getElementById('otpBtn');
+
+  if (!phone) {
+    alert("Enter phone number");
+    return;
+  }
+
+  btn.disabled = true;
+  status.innerText = "Sending OTP...";
+
+  try {
+    const res = await fetch("/send_otp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ phone: phone })
+    });
+
+    const data = await res.json();
+
+    if (data.msg) {
+      status.innerText = data.msg;   // shows demo OTP
+    } else {
+      status.innerText = "OTP failed";
+      btn.disabled = false;
+    }
+
+  } catch (err) {
+    console.error(err);
+    status.innerText = "Server error while sending OTP";
+    btn.disabled = false;
+  }
 }
 </script>
+
 </body>
 </html>
