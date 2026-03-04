@@ -83,6 +83,10 @@ def driver():
 def student():
     return render_template("student.html")
 
+@app.route("/admin")
+def admin():
+    return render_template("admin.html")
+
 @app.route("/logout")
 def logout():
     phone = session.get("driver_phone")
@@ -141,9 +145,22 @@ def location():
 
         bus = BusLocation.query.filter_by(route=data["route"]).first()
 
-        if bus and not bus.active:
-            return jsonify({"status": "trip ended, ignore location"})
-
+        if bus:
+            bus.lat = data["lat"]
+            bus.lng = data["lng"]
+            bus.bus_type = data["busType"]
+            bus.timestamp = datetime.utcnow()
+            bus.active = True   # 🔥 allow restart
+        else:
+            bus = BusLocation(
+                route=data["route"],
+                bus_type=data["busType"],
+                lat=data["lat"],
+                lng=data["lng"],
+                timestamp=datetime.utcnow(),
+                active=True
+            )
+            db.session.add(bus)
         if bus:
             bus.lat = data["lat"]
             bus.lng = data["lng"]

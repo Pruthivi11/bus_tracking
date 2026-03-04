@@ -14,7 +14,7 @@ function setStatus(text) {
 }
 
 function updateBusStatus(bus, busNo) {
-  if (!bus.active) {
+  if (!bus.active || bus.lastSeen > 60) {
     setStatus(`🔴 Bus ${busNo} is not active`);
   }
   else if (bus.lastSeen > 20) {
