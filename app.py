@@ -7,7 +7,7 @@ import os
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
-# ✅ Render production fixes
+# Render production cookie settings
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 
@@ -51,33 +51,55 @@ class Onboard(db.Model):
 def home():
     return render_template("home.html")
 
+# -----------------
+# DRIVER LOGIN (SECURE)
+# -----------------
+
 @app.route("/driver_login", methods=["GET", "POST"])
 def driver_login():
 
-    if request.method == "POST":
-        phone = request.form.get("phone")
-        otp = request.form.get("otp")
+    # Always clear old authentication session
+    if request.method == "GET":
+        if "driver_phone" in session:
+            session.pop("driver_phone")
+        return render_template("login.html")
 
-        if not phone or not otp:
-            return render_template("login.html", error="Enter phone and OTP")
+    phone = request.form.get("phone")
+    otp = request.form.get("otp")
 
-        driver = Driver.query.filter_by(phone=phone, otp=otp).first()
+    if not phone or not otp:
+        return render_template("login.html", error="Enter phone and OTP")
 
-        if driver:
-            driver.logged_in = True
-            db.session.commit()
-            session["driver_phone"] = phone
-            return redirect("/driver")
-        else:
-            return render_template("login.html", error="Invalid OTP")
+    driver = Driver.query.filter_by(phone=phone, otp=otp).first()
 
-    return render_template("login.html")
+    if driver:
+        driver.logged_in = True
+        db.session.commit()
+        session["driver_phone"] = phone
+        return redirect("/driver")
+    else:
+        return render_template("login.html", error="Invalid OTP")
+
+
+# -----------------
+# PROTECTED DRIVER PAGE
+# -----------------
 
 @app.route("/driver")
 def driver():
-    if "driver_phone" not in session:
+    phone = session.get("driver_phone")
+
+    if not phone:
         return redirect("/driver_login")
+
+    driver = Driver.query.filter_by(phone=phone).first()
+
+    if not driver or not driver.logged_in:
+        session.clear()
+        return redirect("/driver_login")
+
     return render_template("driver.html")
+
 
 @app.route("/student")
 def student():
@@ -87,9 +109,14 @@ def student():
 def admin():
     return render_template("admin.html")
 
+# -----------------
+# LOGOUT
+# -----------------
+
 @app.route("/logout")
 def logout():
     phone = session.get("driver_phone")
+
     if phone:
         driver = Driver.query.filter_by(phone=phone).first()
         if driver:
@@ -150,23 +177,7 @@ def location():
             bus.lng = data["lng"]
             bus.bus_type = data["busType"]
             bus.timestamp = datetime.utcnow()
-            bus.active = True   # 🔥 allow restart
-        else:
-            bus = BusLocation(
-                route=data["route"],
-                bus_type=data["busType"],
-                lat=data["lat"],
-                lng=data["lng"],
-                timestamp=datetime.utcnow(),
-                active=True
-            )
-            db.session.add(bus)
-        if bus:
-            bus.lat = data["lat"]
-            bus.lng = data["lng"]
-            bus.bus_type = data["busType"]
-            bus.timestamp = datetime.utcnow()
-            bus.active = True   # ✅ recovery if network back
+            bus.active = True
         else:
             bus = BusLocation(
                 route=data["route"],
@@ -199,7 +210,6 @@ def end_trip():
 
         if bus:
             bus.active = False
-
             Onboard.query.filter_by(bus_route=route).update({
                 "onboard": False,
                 "timestamp": datetime.utcnow()
@@ -213,7 +223,7 @@ def end_trip():
         return jsonify({"error": "end trip failed"}), 500
 
 # -----------------------------
-# HEARTBEAT + STATUS LOGIC
+# HEARTBEAT
 # -----------------------------
 
 @app.route("/get_locations")
