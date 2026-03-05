@@ -157,7 +157,7 @@ def send_otp():
             return jsonify({"error": "Driver not authorized"}), 403
 
         # generate random OTP
-        otp = str(random.randint(1000, 9999))
+        otp = str(random.randint(10000, 99999))
 
         # store OTP in DB
         driver = Driver.query.filter_by(phone=phone).first()
@@ -180,7 +180,21 @@ def send_otp():
             "numbers": phone
         }
 
-        response = requests.get(url, params=params)
+        url = "https://www.fast2sms.com/dev/bulkV2"
+
+        payload = {
+            "route": "otp",
+            "variables_values": otp,
+            "numbers": phone
+        }
+
+        headers = {
+            "authorization": FAST2SMS_API_KEY
+        }
+
+        response = requests.post(url, data=payload, headers=headers)
+
+        print(response.json())
 
         print(response.json())  # optional debugging
 
