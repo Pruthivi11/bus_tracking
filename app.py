@@ -5,6 +5,9 @@ from datetime import datetime
 import os
 import pandas as pd
 import random
+import requests
+
+MAPBOX_KEY=os.environ.get("MAPBOX_KEY")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
@@ -109,7 +112,7 @@ def driver():
 
 @app.route("/student")
 def student():
-    return render_template("student.html")
+    return render_template("student.html",mapbox_key=MAPBOX_KEY)
 
 @app.route("/admin")
 def admin():
@@ -136,6 +139,8 @@ def logout():
 # SEND OTP (WITH EXCEL VALIDATION)
 # -----------------
 
+FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY")
+
 @app.route("/send_otp", methods=["POST"])
 def send_otp():
     try:
@@ -147,12 +152,14 @@ def send_otp():
 
         phone = str(phone)
 
-        # 🔒 Check Excel whitelist
+        # check whitelist
         if phone not in AUTHORIZED_DRIVERS:
             return jsonify({"error": "Driver not authorized"}), 403
 
-        otp = "1234"  # Demo OTP
+        # generate random OTP
+        otp = str(random.randint(1000, 9999))
 
+        # store OTP in DB
         driver = Driver.query.filter_by(phone=phone).first()
 
         if not driver:
@@ -163,12 +170,25 @@ def send_otp():
 
         db.session.commit()
 
-        return jsonify({"msg": "OTP sent"})
+        # FAST2SMS API request
+        url = "https://www.fast2sms.com/dev/bulkV2"
+
+        params = {
+            "authorization": FAST2SMS_API_KEY,
+            "variables_values": otp,
+            "route": "otp",
+            "numbers": phone
+        }
+
+        response = requests.get(url, params=params)
+
+        print(response.json())  # optional debugging
+
+        return jsonify({"msg": "OTP sent successfully"})
 
     except Exception as e:
         print("OTP ERROR:", e)
         return jsonify({"error": "OTP failed"}), 500
-
 # -----------------------------
 # LOCATION UPDATE
 # -----------------------------

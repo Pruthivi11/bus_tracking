@@ -26,7 +26,7 @@ function updateBusStatus(bus, busNo) {
 }
 
 function initMap(center) {
-  mapboxgl.accessToken = "pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ";
+  mapboxgl.accessToken = "{{mapbox_key}}";
 
   map = new mapboxgl.Map({
     container: 'map',
