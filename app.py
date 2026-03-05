@@ -3,6 +3,8 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+import pandas as pd
+import random
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
@@ -16,6 +18,13 @@ CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# -----------------
+# LOAD AUTHORIZED DRIVERS FROM EXCEL
+# -----------------
+
+drivers_df = pd.read_excel("drivers.xlsx")
+AUTHORIZED_DRIVERS = set(drivers_df["phone"].astype(str))
 
 # -----------------
 # MODELS
@@ -52,13 +61,12 @@ def home():
     return render_template("home.html")
 
 # -----------------
-# DRIVER LOGIN (SECURE)
+# DRIVER LOGIN
 # -----------------
 
 @app.route("/driver_login", methods=["GET", "POST"])
 def driver_login():
 
-    # Always clear old authentication session
     if request.method == "GET":
         if "driver_phone" in session:
             session.pop("driver_phone")
@@ -80,7 +88,6 @@ def driver_login():
     else:
         return render_template("login.html", error="Invalid OTP")
 
-
 # -----------------
 # PROTECTED DRIVER PAGE
 # -----------------
@@ -99,7 +106,6 @@ def driver():
         return redirect("/driver_login")
 
     return render_template("driver.html")
-
 
 @app.route("/student")
 def student():
@@ -127,7 +133,7 @@ def logout():
     return redirect("/")
 
 # -----------------
-# MOCK OTP (1234)
+# SEND OTP (WITH EXCEL VALIDATION)
 # -----------------
 
 @app.route("/send_otp", methods=["POST"])
@@ -139,7 +145,13 @@ def send_otp():
         if not phone:
             return jsonify({"error": "Phone required"}), 400
 
-        otp = "1234"
+        phone = str(phone)
+
+        # 🔒 Check Excel whitelist
+        if phone not in AUTHORIZED_DRIVERS:
+            return jsonify({"error": "Driver not authorized"}), 403
+
+        otp = "1234"  # Demo OTP
 
         driver = Driver.query.filter_by(phone=phone).first()
 
@@ -151,7 +163,7 @@ def send_otp():
 
         db.session.commit()
 
-        return jsonify({"msg": f"OTP sent ({otp} for demo)"})
+        return jsonify({"msg": "OTP sent"})
 
     except Exception as e:
         print("OTP ERROR:", e)
@@ -308,7 +320,7 @@ def onboard():
         return jsonify({"error": "onboard failed"}), 500
 
 # -----------------------------
-# RENDER PORT FIX
+# RUN SERVER
 # -----------------------------
 
 if __name__ == "__main__":
