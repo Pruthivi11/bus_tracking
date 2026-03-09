@@ -7,19 +7,19 @@ import pandas as pd
 import random
 import requests
 
-
-print("MAPBOX_KEY:", os.environ["MAPBOX_KEY"])
-print("FAST2SMS_API_KEY:", os.environ["FAST2SMS_API_KEY"])
-print("ALL ENV KEYS:", list(os.environ.keys()))
-
-
 # -----------------
 # APP SETUP
 # -----------------
 
 app = Flask(__name__)
-MAPBOX_KEY = os.environ.get("MAPBOX_KEY"," ") or ""
-FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY"," ") or ""
+
+MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
+FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY")
+
+print("MAPBOX_KEY:", MAPBOX_KEY)
+print("FAST2SMS_API_KEY:", FAST2SMS_API_KEY)
+print("ALL ENV KEYS:", list(os.environ.keys()))
+
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 app.config["SESSION_COOKIE_SECURE"] = True
@@ -109,7 +109,7 @@ def driver_login():
     return render_template("login.html", error="Invalid OTP")
 
 # -----------------
-# PROTECTED DRIVER PAGE
+# DRIVER PAGE
 # -----------------
 
 @app.route("/driver")
@@ -155,17 +155,18 @@ def send_otp():
 
     try:
 
-        data = request.get_json()
-        phone = str(data.get("phone"))
+        data = request.get_json(silent=True) or {}
+
+        phone = data.get("phone")
 
         if not phone:
-            return jsonify({"error":"Phone required"}),400
+            return jsonify({"error": "Phone required"}), 400
 
-        # check whitelist
+        phone = str(phone)
+
         if phone not in AUTHORIZED_DRIVERS:
             return jsonify({"error":"Driver not authorized"}),403
 
-        # generate otp
         otp = str(random.randint(1000,9999))
 
         driver = Driver.query.filter_by(phone=phone).first()
@@ -178,10 +179,6 @@ def send_otp():
 
         db.session.commit()
 
-        # -----------------
-        # FAST2SMS REQUEST
-        # -----------------
-
         url = "https://www.fast2sms.com/dev/bulkV2"
 
         payload = {
@@ -190,11 +187,12 @@ def send_otp():
             "numbers":phone
         }
 
-        headers = {
-            "authorization":FAST2SMS_API_KEY
-        }
-
-        response = requests.get(url,headers=headers,params=payload)
+        response = requests.get(
+            url,
+            headers={"authorization": FAST2SMS_API_KEY},
+            params=payload,
+            timeout=10
+        )
 
         print("FAST2SMS RESPONSE:",response.text)
 
@@ -205,7 +203,7 @@ def send_otp():
         return jsonify({"error":"OTP failed"}),500
 
 # -----------------
-# LOCATION UPDATE
+# BUS LOCATION UPDATE
 # -----------------
 
 @app.route("/location", methods=["POST"])
@@ -213,7 +211,12 @@ def location():
 
     try:
 
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+
+        required = ("route", "busType", "lat", "lng")
+
+        if not all(k in data for k in required):
+            return jsonify({"error": "Invalid data"}), 400
 
         route = data["route"]
         busType = data["busType"]
@@ -252,13 +255,66 @@ def location():
         return jsonify({"error":"location failed"}),500
 
 # -----------------
+# ONBOARD STUDENT
+# -----------------
+
+@app.route("/onboard", methods=["POST"])
+def onboard():
+
+    try:
+
+        data = request.get_json(silent=True) or {}
+
+        roll_no = data.get("roll_no")
+        bus_route = data.get("bus_route")
+        onboard = data.get("onboard", True)
+
+        if not roll_no or not bus_route:
+            return jsonify({"error":"Invalid data"}),400
+
+        record = Onboard(
+            roll_no=str(roll_no),
+            bus_route=str(bus_route),
+            onboard=bool(onboard),
+            timestamp=datetime.utcnow()
+        )
+
+        db.session.add(record)
+        db.session.commit()
+
+        return jsonify({"status":"recorded"})
+
+    except Exception as e:
+        print("ONBOARD ERROR:", e)
+        return jsonify({"error":"onboard failed"}),500
+
+# -----------------
+# GET ONBOARD STUDENTS
+# -----------------
+
+@app.route("/get_onboard/<route>")
+def get_onboard(route):
+
+    students = Onboard.query.filter_by(bus_route=route, onboard=True).all()
+
+    result = []
+
+    for s in students:
+        result.append({
+            "roll_no": s.roll_no,
+            "timestamp": s.timestamp
+        })
+
+    return jsonify(result)
+
+# -----------------
 # END TRIP
 # -----------------
 
 @app.route("/end_trip", methods=["POST"])
 def end_trip():
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     route = data.get("route")
 
     bus = BusLocation.query.filter_by(route=route).first()
@@ -277,7 +333,7 @@ def end_trip():
     return jsonify({"status":"trip ended"})
 
 # -----------------
-# GET LOCATIONS
+# GET BUS LOCATIONS
 # -----------------
 
 @app.route("/get_locations")
@@ -320,5 +376,6 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0",port=port)
+
 print("ENV TEST:", dict(os.environ))
 print("APP VERSION: ENV TEST BUILD")
