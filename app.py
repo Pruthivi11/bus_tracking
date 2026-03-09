@@ -8,8 +8,8 @@ import random
 import requests
 
 
-print("MAPBOX_KEY:", os.environ.get("MAPBOX_KEY"))
-print("FAST2SMS_API_KEY:", os.environ.get("FAST2SMS_API_KEY"))
+print("MAPBOX_KEY:", os.environ.get["MAPBOX_KEY"])
+print("FAST2SMS_API_KEY:", os.environ.get["FAST2SMS_API_KEY"])
 print("ALL ENV KEYS:", list(os.environ.keys()))
 
 
