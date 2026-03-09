@@ -6,7 +6,7 @@ import os
 import pandas as pd
 import random
 import requests
-from dotenv import load_dotenv
+
 
 
 # -----------------
