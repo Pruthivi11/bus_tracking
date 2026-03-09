@@ -6,17 +6,16 @@ import os
 import pandas as pd
 import random
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 
 # -----------------
 # KEYS
 # -----------------
 
 MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
+FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY")
 
-# Fallback if Render env variable not set
-FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY") or "nv3MZGdOxCUghNkl5QSrYoJjTK0DtibfV2ymsW61aARwXF7IHLnj3hC9Jw4IzXlGtxmPNVo1EWaRyMOH"
-
-print("FAST2SMS KEY:", FAST2SMS_API_KEY)
 
 # -----------------
 # APP SETUP
