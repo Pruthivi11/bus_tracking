@@ -9,14 +9,6 @@ import requests
 
 
 
-# -----------------
-# KEYS
-# -----------------
-
-MAPBOX_KEY = os.environ.get("MAPBOX_KEY"," ") or ""
-FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY"," ") or ""
-print("MAPBOX KEY:", MAPBOX_KEY)
-print("FAST2SMS KEY:", FAST2SMS_API_KEY)
 
 
 # -----------------
@@ -24,6 +16,8 @@ print("FAST2SMS KEY:", FAST2SMS_API_KEY)
 # -----------------
 
 app = Flask(__name__)
+MAPBOX_KEY = os.environ.get("MAPBOX_KEY"," ") or ""
+FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY"," ") or ""
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 app.config["SESSION_COOKIE_SECURE"] = True
