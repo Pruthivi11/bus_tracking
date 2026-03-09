@@ -13,8 +13,10 @@ import requests
 # KEYS
 # -----------------
 
-MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
-FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY")
+MAPBOX_KEY = os.environ.get("MAPBOX_KEY"," ") or ""
+FAST2SMS_API_KEY = os.environ.get("FAST2SMS_API_KEY"," ") or ""
+print("MAPBOX KEY:", MAPBOX_KEY)
+print("FAST2SMS KEY:", FAST2SMS_API_KEY)
 
 
 # -----------------
@@ -322,3 +324,5 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0",port=port)
+print("ENV TEST:", dict(os.environ))
+print("APP VERSION: ENV TEST BUILD")
