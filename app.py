@@ -78,7 +78,7 @@ def home():
 
 @app.route("/student")
 def student():
-    return render_template("student.html", mapbox_key=MAPBOX_KEY)
+    return render_template("student.html")
 
 
 @app.route("/admin")
