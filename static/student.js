@@ -126,7 +126,7 @@ function fetchBusLocations(studentLat, studentLng) {
 
                 const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
 
-                if (dist <= 10) {
+                if (dist <= 20) {
 
                     fetch("/onboard", {
                         method: "POST",

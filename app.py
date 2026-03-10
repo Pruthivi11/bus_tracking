@@ -31,8 +31,16 @@ db = SQLAlchemy(app)
 
 try:
     drivers_df = pd.read_excel("drivers.xlsx")
-    AUTHORIZED_DRIVERS = set(drivers_df["phone"].astype(str))
-    print("Authorized drivers loaded:", len(AUTHORIZED_DRIVERS))
+
+    AUTHORIZED_DRIVERS = set(
+        drivers_df["phone"]
+        .astype(str)
+        .str.replace(".0","", regex=False)
+        .str.strip()
+    )
+
+    print("Authorized drivers loaded:", AUTHORIZED_DRIVERS)
+
 except Exception as e:
     print("Driver Excel load error:", e)
     AUTHORIZED_DRIVERS = set()
