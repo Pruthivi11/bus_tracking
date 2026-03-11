@@ -50,9 +50,8 @@ def load_drivers():
         print("Driver Excel load error:", e)
 
 
-@app.before_first_request
-def init_data():
-    load_drivers()
+#Load drivers when app starts
+load_drivers()
 
 
 # -----------------
