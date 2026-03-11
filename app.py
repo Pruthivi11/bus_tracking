@@ -399,3 +399,10 @@ def end_trip():
     db.session.commit()
 
     return jsonify({"status":"trip ended"})
+# -----------------
+# INITIALIZE DATABASE
+# -----------------
+
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
