@@ -15,8 +15,8 @@ app = Flask(__name__)
 MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
-app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 CORS(app)
 
@@ -177,7 +177,12 @@ def send_otp():
     try:
 
         data = request.get_json(silent=True) or {}
-        phone = str(data.get("phone",""))
+        phone = str(data.get("phone","")).strip()
+
+        # normalize phone
+        phone = phone.replace("+91","")
+        phone = phone.replace(" ","")
+        phone = phone.replace("-","")
 
         if not phone:
             return jsonify({"error":"Phone required"}),400

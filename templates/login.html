@@ -62,8 +62,13 @@ async function sendOTP() {
     const data = await res.json();
 
     if (data.msg) {
-      status.innerHTML = data.msg + "<br><b>Your OTP: " + data.otp + "</b>";   // shows demo OTP
-    } else {
+      status.innerHTML = data.msg + "<br><b>Your OTP: " + data.otp + "</b>";
+    }
+    else if (data.error) {
+      status.innerText = data.error;
+      btn.disabled = false;
+    }
+    else {
       status.innerText = "OTP failed";
       btn.disabled = false;
     }
