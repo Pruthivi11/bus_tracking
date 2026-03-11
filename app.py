@@ -26,24 +26,34 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # -----------------
-# LOAD AUTHORIZED DRIVERS
+# AUTHORIZED DRIVERS
 # -----------------
 
-try:
-    drivers_df = pd.read_excel("drivers.xlsx")
+AUTHORIZED_DRIVERS = set()
 
-    AUTHORIZED_DRIVERS = set(
-        drivers_df["phone"]
-        .astype(str)
-        .str.replace(".0","", regex=False)
-        .str.strip()
-    )
+def load_drivers():
+    global AUTHORIZED_DRIVERS
 
-    print("Authorized drivers loaded:", AUTHORIZED_DRIVERS)
+    try:
+        drivers_df = pd.read_excel("drivers.xlsx")
 
-except Exception as e:
-    print("Driver Excel load error:", e)
-    AUTHORIZED_DRIVERS = set()
+        AUTHORIZED_DRIVERS = set(
+            drivers_df["phone"]
+            .astype(str)
+            .str.replace(".0","", regex=False)
+            .str.strip()
+        )
+
+        print("Authorized drivers loaded:", AUTHORIZED_DRIVERS)
+
+    except Exception as e:
+        print("Driver Excel load error:", e)
+
+
+@app.before_first_request
+def init_data():
+    load_drivers()
+
 
 # -----------------
 # DATABASE MODELS
@@ -179,7 +189,6 @@ def send_otp():
         data = request.get_json(silent=True) or {}
         phone = str(data.get("phone","")).strip()
 
-        # normalize phone
         phone = phone.replace("+91","")
         phone = phone.replace(" ","")
         phone = phone.replace("-","")
@@ -390,17 +399,3 @@ def end_trip():
     db.session.commit()
 
     return jsonify({"status":"trip ended"})
-
-
-# -----------------
-# RUN SERVER
-# -----------------
-
-if __name__ == "__main__":
-
-    with app.app_context():
-        db.create_all()
-
-    port = int(os.environ.get("PORT",5000))
-
-    app.run(host="0.0.0.0",port=port)
