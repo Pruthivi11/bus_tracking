@@ -11,27 +11,21 @@ import random
 # -----------------
 
 app = Flask(__name__)
-db = SQLAlchemy(app)
 
-
-class Driver(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(15))
-    otp = db.Column(db.String(6))
-    otp_created = db.Column(db.DateTime)
-    logged_in = db.Column(db.Boolean, default=False)
-
-MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 app.config["SESSION_COOKIE_SECURE"] = False
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
+# DATABASE CONFIG (must be BEFORE SQLAlchemy init)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///bus_tracker.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
+
 CORS(app)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
 
 # -----------------
 # AUTHORIZED DRIVERS
@@ -57,8 +51,7 @@ def load_drivers():
     except Exception as e:
         print("Driver Excel load error:", e)
 
-
-#Load drivers when app starts
+# Load drivers when app starts
 load_drivers()
 
 
@@ -90,6 +83,14 @@ class Onboard(db.Model):
     bus_route = db.Column(db.String(20), nullable=False, index=True)
     onboard = db.Column(db.Boolean, default=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# -----------------
+# CREATE DATABASE TABLES
+# -----------------
+
+with app.app_context():
+    db.create_all()
 
 
 # -----------------
@@ -289,58 +290,6 @@ def location():
 
 
 # -----------------
-# ONBOARD STUDENT
-# -----------------
-
-@app.route("/onboard", methods=["POST"])
-def onboard():
-
-    try:
-
-        data = request.get_json(silent=True) or {}
-
-        roll_no = data.get("rollNo")
-        bus_route = data.get("busRoute")
-        onboard_flag = data.get("onboard", True)
-
-        if not roll_no or not bus_route:
-            return jsonify({"error":"Invalid data"}),400
-
-        bus = BusLocation.query.filter_by(route=bus_route).first()
-
-        if not bus or not bus.active:
-            onboard_flag = False
-
-        record = Onboard.query.filter_by(
-            roll_no=roll_no,
-            bus_route=bus_route
-        ).first()
-
-        if record:
-
-            record.onboard = onboard_flag
-            record.timestamp = datetime.utcnow()
-
-        else:
-
-            record = Onboard(
-                roll_no=roll_no,
-                bus_route=bus_route,
-                onboard=onboard_flag
-            )
-
-            db.session.add(record)
-
-        db.session.commit()
-
-        return jsonify({"status":"ok","onboard":onboard_flag})
-
-    except Exception as e:
-        print("ONBOARD ERROR:",e)
-        return jsonify({"error":"onboard failed"}),500
-
-
-# -----------------
 # GET BUS LOCATIONS
 # -----------------
 
@@ -359,11 +308,6 @@ def get_locations():
 
             if bus.active:
                 bus.active = False
-
-                Onboard.query.filter_by(bus_route=bus.route).update({
-                    "onboard":False,
-                    "timestamp":datetime.utcnow()
-                })
 
         else:
             bus.active = True
@@ -395,21 +339,8 @@ def end_trip():
     bus = BusLocation.query.filter_by(route=route).first()
 
     if bus:
-
         bus.active = False
-
-        Onboard.query.filter_by(bus_route=route).update({
-            "onboard":False,
-            "timestamp":datetime.utcnow()
-        })
 
     db.session.commit()
 
     return jsonify({"status":"trip ended"})
-# -----------------
-# INITIALIZE DATABASE
-# -----------------
-
-if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
