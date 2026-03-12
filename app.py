@@ -11,6 +11,15 @@ import random
 # -----------------
 
 app = Flask(__name__)
+db = SQLAlchemy(app)
+
+
+class Driver(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    phone = db.Column(db.String(15))
+    otp = db.Column(db.String(6))
+    otp_created = db.Column(db.DateTime)
+    logged_in = db.Column(db.Boolean, default=False)
 
 MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
@@ -23,7 +32,6 @@ CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bus_tracker.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
 
 # -----------------
 # AUTHORIZED DRIVERS
