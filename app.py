@@ -14,11 +14,17 @@ app = Flask(__name__)
 
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
-app.config["SESSION_COOKIE_SECURE"] = False
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# -----------------
+# DATABASE CONFIG
+# -----------------
 
-# DATABASE CONFIG (must be BEFORE SQLAlchemy init)
-app.config["SQLALCHEMY_DATABASE_URI"] =  "sqlite:///instance/bus_tracker.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# Render sometimes gives postgres:// instead of postgresql://
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
