@@ -1,7 +1,9 @@
+
 let map;
 let busMarkers = {};
 let studentMarker = null;
 let isOnboard = false;
+let lastBusPosition = {};
 
 const rollNoEl = document.getElementById("rollNo");
 const busNoEl = document.getElementById("busNo");
@@ -30,7 +32,7 @@ function updateBusStatus(bus, busNo) {
 
 function initMap(center) {
 
-    mapboxgl.accessToken ="pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNta2Y2dzhwdjBnNjAzaHF6Y2tydXY2aXgifQ.Ss1FmjnHljaQc7BgTDvZSQ";
+    mapboxgl.accessToken = "pk.ey.";
 
     map = new mapboxgl.Map({
         container: "map",
@@ -59,7 +61,6 @@ function placeStudentMarker(lat, lng) {
 function getDistance(lat1, lon1, lat2, lon2) {
 
     const R = 6371000;
-
     const toRad = deg => deg * Math.PI / 180;
 
     const dLat = toRad(lat2 - lat1);
@@ -90,67 +91,127 @@ function createBusMarker(route, lat, lng) {
         .addTo(map);
 }
 
-function fetchBusLocations(studentLat, studentLng) {
+
+/* ---------- Smooth Movement Animation ---------- */
+
+function animateMarker(route, newLat, newLng) {
+
+    const marker = busMarkers[route];
+
+    if (!marker) return;
+
+    const start = lastBusPosition[route] || marker.getLngLat();
+
+    const startLng = start.lng;
+    const startLat = start.lat;
+
+    const duration = 1000;
+    const startTime = performance.now();
+
+    function animate(time) {
+
+        const progress = Math.min((time - startTime) / duration, 1);
+
+        const lng = startLng + (newLng - startLng) * progress;
+        const lat = startLat + (newLat - startLat) * progress;
+
+        marker.setLngLat([lng, lat]);
+
+        if (progress < 1) requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+
+    lastBusPosition[route] = { lat: newLat, lng: newLng };
+}
+
+
+/* ---------- Fetch Bus Locations ---------- */
+
+function loadBusLocations(studentLat, studentLng) {
 
     const busNo = busNoEl.value.trim();
 
     fetch("/get_locations")
         .then(r => r.json())
-        .then(items => {
+        .then(data => {
 
-            Object.values(busMarkers).forEach(m => m.remove());
-            busMarkers = {};
+            data.forEach(bus => {
 
-            const bus = items.find(b => String(b.route) === String(busNo));
+                if (String(bus.route) !== String(busNo)) return;
 
-            if (!bus) {
+                /* Remove marker if inactive */
 
-                if (!isOnboard) {
-                    setStatus(`🔴 Bus ${busNo} is not active`);
-                }
+                if (!bus.active) {
 
-                return;
-            }
-
-            busMarkers[bus.route] = createBusMarker(bus.route, bus.lat, bus.lng);
-
-            if (!isOnboard) {
-                updateBusStatus(bus, busNo);
-            }
-
-            if (
-                typeof studentLat === "number" &&
-                typeof studentLng === "number" &&
-                !isOnboard
-            ) {
-
-                const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
-
-                if (dist <= 20) {
-
-                    fetch("/onboard", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            rollNo: rollNoEl.value,
-                            busRoute: busNo,
-                            onboard: true
-                        })
-                    });
-
-                    if (studentMarker) {
-                        studentMarker.remove();
-                        studentMarker = null;
+                    if (busMarkers[bus.route]) {
+                        busMarkers[bus.route].remove();
+                        delete busMarkers[bus.route];
                     }
 
-                    isOnboard = true;
+                    if (!isOnboard) {
+                        setStatus(`🔴 Bus ${busNo} is not active`);
+                    }
 
-                    setStatus(`🟢 ONBOARD Bus ${busNo} (${bus.busType})`);
+                    return;
                 }
-            }
+
+                /* Create marker if not exists */
+
+                if (!busMarkers[bus.route]) {
+
+                    busMarkers[bus.route] = createBusMarker(bus.route, bus.lat, bus.lng);
+
+                } else {
+
+                    animateMarker(bus.route, bus.lat, bus.lng);
+                }
+
+                if (!isOnboard) {
+                    updateBusStatus(bus, busNo);
+                }
+
+                /* ---------- Onboard Detection ---------- */
+
+                if (
+                    typeof studentLat === "number" &&
+                    typeof studentLng === "number" &&
+                    !isOnboard
+                ) {
+
+                    const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
+
+                    if (dist <= 20) {
+
+                        fetch("/onboard", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                rollNo: rollNoEl.value,
+                                busRoute: busNo,
+                                onboard: true
+                            })
+                        });
+
+                        if (studentMarker) {
+                            studentMarker.remove();
+                            studentMarker = null;
+                        }
+
+                        isOnboard = true;
+
+                        setStatus(`🟢 ONBOARD Bus ${busNo} (${bus.busType})`);
+                    }
+                }
+
+            });
+
         })
         .catch(() => setStatus("⚠️ Failed to fetch bus locations"));
 }
+
+
+/* ---------- Start Tracking ---------- */
 
 showBtn.addEventListener("click", () => {
 
@@ -180,7 +241,7 @@ showBtn.addEventListener("click", () => {
 
             placeStudentMarker(latitude, longitude);
 
-            fetchBusLocations(latitude, longitude);
+            loadBusLocations(latitude, longitude);
         },
 
         err => alert("Location error: " + err.message),
@@ -190,4 +251,19 @@ showBtn.addEventListener("click", () => {
             maximumAge: 1000
         }
     );
+
+    /* Reduce server load */
+
+    setInterval(() => {
+
+        if (studentMarker) {
+
+            const pos = studentMarker.getLngLat();
+
+            loadBusLocations(pos.lat, pos.lng);
+
+        }
+
+    }, 5000);
+
 });

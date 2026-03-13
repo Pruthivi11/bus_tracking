@@ -314,6 +314,7 @@ def get_locations():
 
             if bus.active:
                 bus.active = False
+                
 
         else:
             bus.active = True
@@ -346,6 +347,8 @@ def end_trip():
 
     if bus:
         bus.active = False
+        bus.lat=None
+        bus.lng=None
 
     db.session.commit()
 
