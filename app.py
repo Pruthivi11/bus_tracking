@@ -18,7 +18,7 @@ app.config["SESSION_COOKIE_SECURE"] = False
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # DATABASE CONFIG (must be BEFORE SQLAlchemy init)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///bus_tracker.db"
+app.config["SQLALCHEMY_DATABASE_URI"] =  "sqlite:///instance/bus_tracker.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
