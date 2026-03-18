@@ -1,4 +1,3 @@
-
 let map;
 let busMarkers = {};
 let studentMarker = null;
@@ -73,7 +72,7 @@ setStatus(`🟢 Bus ${busNo} (${bus.busType}) active`);
 
 function initMap(center){
 
-mapboxgl.accessToken="pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNtbXRsNnAwazFza2UycXNkeTBsdHZqd2YifQ.BM0XjTixeeXYFc3S-Jrm5A";
+mapboxgl.accessToken=MAPBOX_KEY;
 
 map=new mapboxgl.Map({
 container:"map",
