@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Admin Dashboard – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7faff">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -19,7 +20,7 @@
       Commute Assistant
     </a>
     <span class="nav-tag tag-purple">
-      <i class="fa-solid fa-shield-halved"></i>&nbsp; Admin
+      <i class="fa-solid fa-shield-halved"></i>&nbsp;Admin
     </span>
   </nav>
 
@@ -33,11 +34,11 @@
       </div>
       <button class="btn-refresh" onclick="loadBusData()">
         <i class="fa-solid fa-rotate-right spin-icon"></i>
-        Refresh Data
+        Refresh
       </button>
     </div>
 
-    <!-- STATS STRIP -->
+    <!-- STATS STRIP — horizontal scroll on mobile, 3-col grid on tablet+ -->
     <div class="stats-strip">
       <div class="stat-card">
         <div class="stat-icon blue"><i class="fa-solid fa-bus"></i></div>
@@ -62,7 +63,7 @@
       </div>
     </div>
 
-    <!-- BUS GRID -->
+    <!-- BUS GRID — 1 col mobile, 2 col tablet, auto-fill desktop -->
     <div id="busData">
       <div class="loading-state">
         <div class="spinner"></div>
@@ -126,7 +127,7 @@
           return;
         }
 
-        // Sort: active first
+        // Active buses first
         items.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
 
         items.forEach((bus, i) => {
@@ -136,17 +137,16 @@
           card.className = `bus-card${isActive ? "" : " inactive"}`;
           card.style.animationDelay = `${i * 0.05}s`;
 
-          const statusValueClass = isActive ? "meta-value active-color" : "meta-value inactive-color";
+          const statusCls = isActive ? "meta-value active-color" : "meta-value inactive-color";
 
           card.innerHTML = `
             <div class="bus-card-header">
               <div class="bus-route">
-                <i class="fa-solid fa-route route-icon"></i>
-                Route ${bus.route}
+                <i class="fa-solid fa-route route-icon"></i>Route ${bus.route}
               </div>
               ${isActive
-                ? `<span class="bus-status-pill status-live"><span class="dot"></span> Live</span>`
-                : `<span class="bus-status-pill status-offline"><i class="fa-solid fa-circle-xmark"></i> Offline</span>`
+                ? `<span class="bus-status-pill status-live"><span class="dot"></span>Live</span>`
+                : `<span class="bus-status-pill status-offline"><i class="fa-solid fa-circle-xmark"></i>Offline</span>`
               }
             </div>
 
@@ -165,7 +165,7 @@
               </div>
               <div class="meta-item">
                 <div class="meta-label">Status</div>
-                <div class="${statusValueClass}">${isActive ? "Active" : "Inactive"}</div>
+                <div class="${statusCls}">${isActive ? "Active" : "Inactive"}</div>
               </div>
             </div>
 

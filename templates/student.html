@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Student Dashboard – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7faff">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -20,7 +21,7 @@
       Commute Assistant
     </a>
     <span class="nav-tag tag-green">
-      <i class="fa-solid fa-graduation-cap"></i>&nbsp; Student
+      <i class="fa-solid fa-graduation-cap"></i>&nbsp;Student
     </span>
   </nav>
 
@@ -29,10 +30,10 @@
 
       <div class="page-title">
         <h1>Track Your Bus</h1>
-        <p>Live GPS tracking with onboard detection &amp; stop alerts</p>
+        <p>Live GPS with onboard detection &amp; stop alerts</p>
       </div>
 
-      <!-- MODE TOGGLE -->
+      <!-- MORNING / EVENING TOGGLE -->
       <div class="mode-toggle-wrap">
         <span class="mode-label">Trip Mode</span>
         <div class="mode-toggle">
@@ -52,13 +53,16 @@
 
         <!-- IDENTITY SECTION -->
         <div class="card-section">
-          <div class="section-title"><i class="fa-solid fa-id-card"></i> Your Details</div>
+          <div class="section-title">
+            <i class="fa-solid fa-id-card"></i> Your Details
+          </div>
 
           <div class="form-group">
             <label class="form-label" for="rollNo">Roll Number</label>
             <div class="input-wrap">
               <i class="fa-solid fa-user input-icon"></i>
-              <input id="rollNo" class="form-input" placeholder="e.g. 21CS101">
+              <input id="rollNo" class="form-input" placeholder="e.g. 21CS101"
+                     autocomplete="off" inputmode="text">
             </div>
           </div>
 
@@ -66,18 +70,21 @@
             <label class="form-label" for="busNo">Bus Number</label>
             <div class="input-wrap">
               <i class="fa-solid fa-bus input-icon"></i>
-              <input id="busNo" class="form-input" placeholder="e.g. Route 7">
+              <input id="busNo" class="form-input" placeholder="e.g. Route 7"
+                     autocomplete="off" inputmode="text">
             </div>
           </div>
         </div>
 
-        <!-- EVENING DESTINATION BLOCK -->
+        <!-- EVENING — DESTINATION & REMINDERS -->
         <div class="card-section" id="destinationBlock">
-          <div class="section-title"><i class="fa-solid fa-map-pin"></i> Destination &amp; Reminders</div>
+          <div class="section-title">
+            <i class="fa-solid fa-map-pin"></i> Destination &amp; Reminders
+          </div>
 
           <div class="dest-hint">
             <i class="fa-solid fa-lightbulb"></i>
-            <span>After clicking <strong>Show Map</strong>, tap on the map to pin your stop. Reminders will trigger as the bus approaches.</span>
+            <span>Tap <strong>Show Live Map</strong> first, then tap the map to pin your stop. Reminders trigger as the bus approaches.</span>
           </div>
 
           <button id="selectDestination" class="btn-dest">
@@ -86,7 +93,9 @@
           </button>
 
           <div id="reminderBox">
-            <div class="reminder-title"><i class="fa-solid fa-bell"></i>&nbsp; Alert me when bus is</div>
+            <div class="reminder-title">
+              <i class="fa-solid fa-bell"></i>&nbsp; Alert me when bus is
+            </div>
             <div class="reminder-options">
               <div class="reminder-chip">
                 <input type="checkbox" id="rem2km">
@@ -110,14 +119,13 @@
           </div>
         </div>
 
-        <!-- ACTION SECTION -->
+        <!-- ACTION -->
         <div class="card-section">
           <button id="showMap" class="btn-track">
             <i class="fa-solid fa-map-location-dot"></i>
             Show Live Map
           </button>
 
-          <!-- Status message bar -->
           <div id="statusMsg" class="status-bar"></div>
         </div>
 
@@ -126,22 +134,20 @@
     </div>
   </main>
 
-  <!-- MAP (full width below card) -->
+  <!-- MAP — full width below card -->
   <div id="map"></div>
 
   <footer>&copy; 2026 Commute Assistant</footer>
 
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-  <!-- Mode toggle visual state handler -->
+  <!-- Mode toggle visual state -->
   <script>
     const modeLabels = document.querySelectorAll('.mode-option');
 
     document.querySelectorAll("input[name='tripMode']").forEach(el => {
       el.addEventListener("change", () => {
-        modeLabels.forEach(l => {
-          l.classList.remove('active-mode', 'morning-active', 'evening-active');
-        });
+        modeLabels.forEach(l => l.classList.remove('active-mode', 'morning-active', 'evening-active'));
         if (el.value === 'morning') {
           el.closest('.mode-option').classList.add('active-mode', 'morning-active');
         } else {
@@ -154,16 +160,12 @@
       label.addEventListener('click', () => {
         modeLabels.forEach(l => l.classList.remove('active-mode', 'morning-active', 'evening-active'));
         const radio = label.querySelector('input');
-        if (radio.value === 'morning') {
-          label.classList.add('active-mode', 'morning-active');
-        } else {
-          label.classList.add('active-mode', 'evening-active');
-        }
+        label.classList.add('active-mode', radio.value === 'morning' ? 'morning-active' : 'evening-active');
       });
     });
   </script>
 
-  <!-- Destination block show/hide via class toggle -->
+  <!-- Destination block show/hide -->
   <script>
     document.querySelectorAll("input[name='tripMode']").forEach(el => {
       el.addEventListener("change", () => {
@@ -177,37 +179,31 @@
     });
   </script>
 
-  <!-- Styled status bar helper -->
+  <!-- Styled status bar -->
   <script>
   function setStatusStyled(text) {
     const bar = document.getElementById("statusMsg");
     bar.classList.remove('green', 'yellow', 'red', 'blue', 'visible');
-
     if (!text) return;
     bar.classList.add('visible');
-
-    if (text.includes('🟢') || text.includes('ONBOARD')) {
-      bar.classList.add('green');
-    } else if (text.includes('🟡')) {
-      bar.classList.add('yellow');
-    } else if (text.includes('🔴') || text.includes('⚠️')) {
-      bar.classList.add('red');
-    } else {
-      bar.classList.add('blue');
-    }
-
+    if      (text.includes('🟢') || text.includes('ONBOARD')) bar.classList.add('green');
+    else if (text.includes('🟡'))                              bar.classList.add('yellow');
+    else if (text.includes('🔴') || text.includes('⚠️'))      bar.classList.add('red');
+    else                                                       bar.classList.add('blue');
     bar.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${text.replace(/[🟢🟡🔴⚠️]/gu, '').trim()}`;
   }
   </script>
 
   <script src="/static/student.js"></script>
 
-  <!-- Post-load: patch setStatus from student.js and wire reminder box -->
+  <!-- Post-load patches -->
   <script>
+    // Patch setStatus from student.js to use styled bar
     window.setStatus = function(text) {
       setStatusStyled(text);
     };
 
+    // Ensure map div shows after Show Map is clicked
     document.getElementById('showMap').addEventListener('click', () => {
       setTimeout(() => {
         const mapEl = document.getElementById('map');
@@ -217,6 +213,7 @@
       }, 100);
     });
 
+    // Show reminder box after destination button is tapped
     document.getElementById('selectDestination').addEventListener('click', () => {
       document.getElementById('reminderBox').classList.add('visible');
     });

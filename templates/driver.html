@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Driver Panel – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7faff">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -20,7 +21,7 @@
     </a>
     <div class="nav-right">
       <span class="nav-pill driver-mode">
-        <i class="fa-solid fa-steering-wheel"></i>&nbsp; Driver Mode
+        <i class="fa-solid fa-steering-wheel"></i>&nbsp;Driver
       </span>
     </div>
   </nav>
@@ -40,7 +41,7 @@
         </div>
       </div>
 
-      <!-- DRIVER PANEL CARD -->
+      <!-- DRIVER CARD -->
       <div class="driver-card">
 
         <div class="card-header">
@@ -53,7 +54,7 @@
           <!-- GPS hint -->
           <div class="gps-bar">
             <i class="fa-solid fa-location-crosshairs gps-icon"></i>
-            <span>GPS will activate automatically when you start the trip</span>
+            <span>GPS activates automatically when you start the trip</span>
           </div>
 
           <!-- ROUTE -->
@@ -61,7 +62,8 @@
             <label class="form-label" for="route">Route Number</label>
             <div class="input-wrap">
               <i class="fa-solid fa-route input-icon"></i>
-              <input id="route" class="form-input" placeholder="e.g. Route 12">
+              <input id="route" class="form-input" placeholder="e.g. Route 12"
+                     autocomplete="off" inputmode="text">
             </div>
           </div>
 
@@ -81,7 +83,7 @@
 
           <div class="divider"></div>
 
-          <!-- TRIP CONTROLS -->
+          <!-- TRIP CONTROLS — stacked on mobile, side-by-side on wider screens -->
           <div class="btn-row">
             <button id="startBtn" class="btn-start" onclick="startTrip()">
               <i class="fa-solid fa-play"></i> Start Trip
@@ -105,12 +107,12 @@
 
   <script src="/static/driver.js"></script>
 
-  <!-- Override setStatus to use the new styled banner -->
+  <!-- Override setStatus to use the styled banner -->
   <script>
   function setStatus(text, color) {
-    const banner = document.getElementById("tripStatus");
+    const banner  = document.getElementById("tripStatus");
     const liveText = banner.querySelector(".status-text-row");
-    const subText = banner.querySelector(".status-sub-text");
+    const subText  = banner.querySelector(".status-sub-text");
 
     banner.classList.remove("idle", "active", "ended");
 

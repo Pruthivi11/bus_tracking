@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Commute Assistant – Smart Bus Tracking</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#020d1f">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -19,7 +20,7 @@
       Commute Assistant
     </div>
     <span class="nav-tag tag-blue">
-      <i class="fa-solid fa-circle live-indicator"></i> Live Tracking
+      <i class="fa-solid fa-circle live-indicator"></i>Live
     </span>
   </nav>
 
@@ -30,6 +31,7 @@
     <div class="hero-orb orb-3"></div>
 
     <div class="hero-content">
+
       <div class="hero-badge">
         <span class="dot"></span>
         Smart College Bus Tracking System
@@ -45,32 +47,44 @@
         — designed for students, built for daily commute.
       </p>
 
+      <!--
+        Role cards:
+        - Mobile  : horizontal list rows (role-icon + role-text + role-arrow)
+        - Tablet+ : 3-column grid with vertical card layout (CSS handles switch)
+      -->
       <div class="role-grid">
 
         <a href="/driver_login" class="role-card driver">
           <div class="role-icon"><i class="fa-solid fa-steering-wheel"></i></div>
-          <div class="role-label">Driver</div>
-          <div class="role-desc">Share live location &amp; manage your trip</div>
-          <div class="role-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="role-text">
+            <span class="role-label">Driver</span>
+            <span class="role-desc">Share live location &amp; manage your trip</span>
+          </div>
+          <div class="role-arrow"><i class="fa-solid fa-chevron-right"></i></div>
         </a>
 
         <a href="/student" class="role-card student">
           <div class="role-icon"><i class="fa-solid fa-graduation-cap"></i></div>
-          <div class="role-label">Student</div>
-          <div class="role-desc">Track your bus &amp; get stop reminders</div>
-          <div class="role-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="role-text">
+            <span class="role-label">Student</span>
+            <span class="role-desc">Track your bus &amp; get stop reminders</span>
+          </div>
+          <div class="role-arrow"><i class="fa-solid fa-chevron-right"></i></div>
         </a>
 
         <a href="/admin" class="role-card admin">
           <div class="role-icon"><i class="fa-solid fa-shield-halved"></i></div>
-          <div class="role-label">Admin</div>
-          <div class="role-desc">Monitor all active buses in real-time</div>
-          <div class="role-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+          <div class="role-text">
+            <span class="role-label">Admin</span>
+            <span class="role-desc">Monitor all active buses in real-time</span>
+          </div>
+          <div class="role-arrow"><i class="fa-solid fa-chevron-right"></i></div>
         </a>
 
       </div>
     </div>
 
+    <!-- Stats strip pinned to bottom of hero -->
     <div class="stats-bar">
       <div class="stat-item">
         <div class="stat-num">Live</div>
@@ -78,7 +92,7 @@
       </div>
       <div class="stat-item">
         <div class="stat-num">20m</div>
-        <div class="stat-label">Onboard Detection</div>
+        <div class="stat-label">Onboard Detect</div>
       </div>
       <div class="stat-item">
         <div class="stat-num">3</div>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Driver Login – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#020d1f">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -55,7 +56,8 @@
             <div class="input-wrap">
               <i class="fa-solid fa-phone input-icon"></i>
               <input class="form-input" type="tel" name="phone" id="phone"
-                     placeholder="10-digit registered number" required>
+                     placeholder="10-digit registered number" required
+                     autocomplete="tel" inputmode="tel">
             </div>
           </div>
 
@@ -71,7 +73,8 @@
             <div class="input-wrap">
               <i class="fa-solid fa-key input-icon"></i>
               <input class="form-input" type="text" name="otp" id="otp"
-                     placeholder="4-digit OTP" maxlength="4" required>
+                     placeholder="4-digit OTP" maxlength="4" required
+                     autocomplete="one-time-code" inputmode="numeric">
             </div>
           </div>
 
