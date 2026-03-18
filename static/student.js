@@ -72,7 +72,7 @@ setStatus(`🟢 Bus ${busNo} (${bus.busType}) active`);
 
 function initMap(center){
 
-mapboxgl.accessToken=MAPBOX_KEY;
+mapboxgl.accessToken="pk.eyJ1IjoiY29kZXMtMTE3IiwiYSI6ImNtbXRsNnAwazFza2UycXNkeTBsdHZqd2YifQ.BM0XjTixeeXYFc3S-Jrm5A";
 
 map=new mapboxgl.Map({
 container:"map",

@@ -1,32 +1,554 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Bus Tracking System</title>
-  <!-- Responsive scaling for mobile -->
+  <title>Admin Dashboard – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Link to shared stylesheet -->
   <link rel="stylesheet" href="/static/style.css">
-  <!-- Mapbox CSS (only needed in student.html) -->
-  <!-- <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" /> -->
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue: #0a6cdc;
+      --blue-light: #3d8ef5;
+      --blue-pale: #e8f2ff;
+      --teal: #00bfa5;
+      --teal-light: #b2ece4;
+      --green: #1db97a;
+      --green-light: #d0f5e7;
+      --white: #ffffff;
+      --gray-50: #f7faff;
+      --gray-100: #edf2fb;
+      --gray-200: #d5dfe8;
+      --gray-400: #8a9ab5;
+      --gray-600: #4a5568;
+      --gray-800: #1e2535;
+      --navy: #0a2540;
+      --shadow-sm: 0 2px 12px rgba(10,44,128,0.07);
+      --shadow-md: 0 8px 32px rgba(10,44,128,0.12);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --font-display: 'Syne', sans-serif;
+      --font-body: 'DM Sans', sans-serif;
+      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--gray-50);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    /* NAVBAR */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--gray-200);
+      padding: 0 32px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--navy);
+      text-decoration: none;
+    }
+    .brand-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--blue), var(--teal));
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 15px;
+    }
+    .nav-tag {
+      padding: 5px 13px;
+      background: #ede9fe;
+      color: #5b21b6;
+      border-radius: 50px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* MAIN */
+    main {
+      flex: 1;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 36px 24px 60px;
+      animation: fadeUp 0.5s ease both;
+    }
+
+    /* PAGE HEADER */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .page-header-left h1 {
+      font-family: var(--font-display);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 4px;
+    }
+    .page-header-left p { font-size: 13px; color: var(--gray-400); }
+
+    .btn-refresh {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      background: linear-gradient(135deg, var(--blue), #0052b0);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      box-shadow: 0 4px 16px rgba(10,108,220,0.3);
+    }
+    .btn-refresh:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(10,108,220,0.45);
+    }
+    .btn-refresh .spin-icon { transition: var(--transition); }
+    .btn-refresh:active .spin-icon { animation: spin 0.5s linear; }
+
+    /* STATS STRIP */
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--white);
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .stat-icon {
+      width: 42px; height: 42px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .stat-icon.blue { background: var(--blue-pale); color: var(--blue); }
+    .stat-icon.green { background: var(--green-light); color: var(--green); }
+    .stat-icon.purple { background: #ede9fe; color: #7c3aed; }
+    .stat-num {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--navy);
+      line-height: 1;
+    }
+    .stat-lbl { font-size: 12px; color: var(--gray-400); margin-top: 3px; }
+
+    /* BUS GRID */
+    #busData {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    /* BUS CARD */
+    .bus-card {
+      background: var(--white);
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+      animation: fadeUp 0.4s ease both;
+    }
+    .bus-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+    }
+    .bus-card.inactive::before { background: var(--gray-200); }
+    .bus-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--blue-light);
+    }
+    .bus-card.inactive:hover { border-color: var(--gray-400); }
+
+    .bus-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .bus-route {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--navy);
+    }
+    .bus-status-pill {
+      padding: 4px 12px;
+      border-radius: 50px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .status-live {
+      background: var(--green-light);
+      color: #065f46;
+    }
+    .status-live .dot {
+      width: 6px; height: 6px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    .status-offline {
+      background: var(--gray-100);
+      color: var(--gray-400);
+    }
+
+    .bus-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .meta-item {
+      background: var(--gray-50);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .meta-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--gray-400);
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+    }
+    .meta-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-800);
+      font-family: var(--font-display);
+    }
+    .meta-value.mono {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    /* Type badge */
+    .type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 50px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-top: 12px;
+    }
+    .type-boys { background: var(--blue-pale); color: var(--blue); }
+    .type-girls { background: #fce7f3; color: #be185d; }
+    .type-common { background: var(--teal-light); color: #0d7a6a; }
+
+    /* EMPTY STATE */
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--white);
+      border: 1.5px dashed var(--gray-200);
+      border-radius: var(--radius);
+    }
+    .empty-icon {
+      font-size: 40px;
+      color: var(--gray-200);
+      margin-bottom: 14px;
+    }
+    .empty-state h3 {
+      font-family: var(--font-display);
+      font-size: 18px;
+      color: var(--gray-400);
+      margin-bottom: 6px;
+    }
+    .empty-state p { font-size: 13px; color: var(--gray-400); }
+
+    /* LOADING */
+    .loading-state {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px;
+      gap: 16px;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--blue-pale);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .loading-txt { font-size: 14px; color: var(--gray-400); }
+
+    /* LAST UPDATED */
+    .last-updated {
+      font-size: 12px;
+      color: var(--gray-400);
+      text-align: right;
+      margin-top: 14px;
+    }
+
+    footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .navbar { padding: 0 16px; }
+      .stats-strip { grid-template-columns: 1fr; }
+      .page-header { flex-direction: column; align-items: flex-start; }
+      main { padding: 24px 16px 40px; }
+    }
+  </style>
 </head>
 <body>
-<header class="navbar">
-  <h1>Bus Tracking System</h1>
-  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-</header>
 
-<div class="card">
-  <h2>Administrator Dashboard</h2>
-  <p>Here you can monitor active buses.</p>
-  <button onclick="loadBusData()">Refresh Bus Data</button>
-  <div id="busData"></div>
-</div>
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="brand-icon"><i class="fa-solid fa-bus"></i></div>
+      Commute Assistant
+    </a>
+    <span class="nav-tag"><i class="fa-solid fa-shield-halved"></i> &nbsp;Admin</span>
+  </nav>
 
-<footer class="footer">
-  <p>&copy; 2026 College Transport</p>
-</footer>
+  <main>
 
-<script src="/static/admin.js"></script>
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Fleet Dashboard</h1>
+        <p>Monitor all active buses in real-time</p>
+      </div>
+      <button class="btn-refresh" onclick="loadBusData()">
+        <i class="fa-solid fa-rotate-right spin-icon"></i>
+        Refresh Data
+      </button>
+    </div>
+
+    <!-- STATS STRIP -->
+    <div class="stats-strip">
+      <div class="stat-card">
+        <div class="stat-icon blue"><i class="fa-solid fa-bus"></i></div>
+        <div>
+          <div class="stat-num" id="statTotal">–</div>
+          <div class="stat-lbl">Total Buses</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green"><i class="fa-solid fa-signal"></i></div>
+        <div>
+          <div class="stat-num" id="statActive">–</div>
+          <div class="stat-lbl">Active Now</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon purple"><i class="fa-solid fa-clock"></i></div>
+        <div>
+          <div class="stat-num" id="statInactive">–</div>
+          <div class="stat-lbl">Inactive</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUS GRID -->
+    <div id="busData">
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <div class="loading-txt">Loading bus data…</div>
+      </div>
+    </div>
+
+    <div class="last-updated" id="lastUpdated"></div>
+
+  </main>
+
+  <footer>&copy; 2026 Commute Assistant</footer>
+
+  <!-- ENHANCED admin.js logic inline (calls original /get_locations) -->
+  <script>
+  console.log("Admin dashboard loaded");
+
+  function timeSince(seconds) {
+    if (seconds < 5) return "just now";
+    if (seconds < 60) return `${seconds}s ago`;
+    return `${Math.floor(seconds / 60)}m ago`;
+  }
+
+  function getBusTypeInfo(type) {
+    const map = {
+      boys: { label: "Boys", icon: "fa-mars", cls: "type-boys" },
+      girls: { label: "Girls", icon: "fa-venus", cls: "type-girls" },
+      common: { label: "Common", icon: "fa-people-group", cls: "type-common" }
+    };
+    return map[type] || { label: type || "Unknown", icon: "fa-bus", cls: "type-common" };
+  }
+
+  function loadBusData() {
+    const grid = document.getElementById("busData");
+    grid.innerHTML = `
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <div class="loading-txt">Fetching live data…</div>
+      </div>`;
+
+    fetch("/get_locations")
+      .then(r => r.json())
+      .then(items => {
+        grid.innerHTML = "";
+
+        // Update stats
+        const total = items.length;
+        const active = items.filter(b => b.active).length;
+        document.getElementById("statTotal").textContent = total;
+        document.getElementById("statActive").textContent = active;
+        document.getElementById("statInactive").textContent = total - active;
+        document.getElementById("lastUpdated").textContent =
+          `Last updated: ${new Date().toLocaleTimeString()}`;
+
+        if (total === 0) {
+          grid.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon"><i class="fa-solid fa-bus-simple"></i></div>
+              <h3>No buses registered</h3>
+              <p>Buses will appear here once drivers start their trips.</p>
+            </div>`;
+          return;
+        }
+
+        // Sort: active first
+        items.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
+
+        items.forEach((bus, i) => {
+          const typeInfo = getBusTypeInfo(bus.busType);
+          const isActive = bus.active && bus.lastSeen <= 60;
+          const card = document.createElement("div");
+          card.className = `bus-card${isActive ? "" : " inactive"}`;
+          card.style.animationDelay = `${i * 0.05}s`;
+
+          card.innerHTML = `
+            <div class="bus-card-header">
+              <div class="bus-route">
+                <i class="fa-solid fa-route" style="color:var(--blue);font-size:14px;margin-right:6px;"></i>
+                Route ${bus.route}
+              </div>
+              ${isActive
+                ? `<span class="bus-status-pill status-live"><span class="dot"></span> Live</span>`
+                : `<span class="bus-status-pill status-offline"><i class="fa-solid fa-circle-xmark" style="font-size:10px;"></i> Offline</span>`
+              }
+            </div>
+
+            <div class="bus-meta">
+              <div class="meta-item">
+                <div class="meta-label">Latitude</div>
+                <div class="meta-value mono">${bus.lat != null ? bus.lat.toFixed(5) : "—"}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Longitude</div>
+                <div class="meta-value mono">${bus.lng != null ? bus.lng.toFixed(5) : "—"}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Last Seen</div>
+                <div class="meta-value">${timeSince(bus.lastSeen)}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">Status</div>
+                <div class="meta-value" style="color:${isActive ? 'var(--green)' : 'var(--gray-400)'}">
+                  ${isActive ? "Active" : "Inactive"}
+                </div>
+              </div>
+            </div>
+
+            <span class="type-badge ${typeInfo.cls}">
+              <i class="fa-solid ${typeInfo.icon}"></i> ${typeInfo.label} Bus
+            </span>
+          `;
+          grid.appendChild(card);
+        });
+      })
+      .catch(() => {
+        document.getElementById("busData").innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <h3>Failed to load data</h3>
+            <p>Check your connection and try refreshing.</p>
+          </div>`;
+      });
+  }
+
+  // Auto-load on page open
+  loadBusData();
+  // Auto-refresh every 2 seconds
+  setInterval(loadBusData, 1000);
+  </script>
+
 </body>
 </html>
