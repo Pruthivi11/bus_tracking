@@ -4,429 +4,14 @@
   <meta charset="UTF-8">
   <title>Student Dashboard – Commute Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet"/>
-
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --blue: #0a6cdc;
-      --blue-light: #3d8ef5;
-      --blue-pale: #e8f2ff;
-      --teal: #00bfa5;
-      --teal-light: #b2ece4;
-      --green: #1db97a;
-      --green-light: #d0f5e7;
-      --white: #ffffff;
-      --gray-50: #f7faff;
-      --gray-100: #edf2fb;
-      --gray-200: #d5dfe8;
-      --gray-400: #8a9ab5;
-      --gray-600: #4a5568;
-      --gray-800: #1e2535;
-      --navy: #0a2540;
-      --shadow-sm: 0 2px 12px rgba(10,44,128,0.07);
-      --shadow-md: 0 8px 32px rgba(10,44,128,0.12);
-      --radius: 16px;
-      --radius-sm: 10px;
-      --font-display: 'Syne', sans-serif;
-      --font-body: 'DM Sans', sans-serif;
-      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    body {
-      font-family: var(--font-body);
-      background: var(--gray-50);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes slideDown {
-      from { opacity: 0; height: 0; transform: translateY(-8px); }
-      to { opacity: 1; height: auto; transform: translateY(0); }
-    }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    /* NAVBAR */
-    .navbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(255,255,255,0.96);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--gray-200);
-      padding: 0 32px;
-      height: 64px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: var(--shadow-sm);
-    }
-    .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 18px;
-      color: var(--navy);
-      text-decoration: none;
-    }
-    .brand-icon {
-      width: 34px; height: 34px;
-      background: linear-gradient(135deg, var(--blue), var(--teal));
-      border-radius: 9px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 15px;
-    }
-    .nav-tag {
-      padding: 5px 13px;
-      background: var(--green-light);
-      color: #065f46;
-      border-radius: 50px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-
-    /* LAYOUT */
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 32px 16px 0;
-    }
-
-    .dashboard-wrapper {
-      width: 100%;
-      max-width: 480px;
-      animation: fadeUp 0.5s ease both;
-    }
-
-    /* PAGE TITLE */
-    .page-title {
-      margin-bottom: 20px;
-    }
-    .page-title h1 {
-      font-family: var(--font-display);
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--navy);
-      margin-bottom: 4px;
-    }
-    .page-title p { font-size: 13px; color: var(--gray-400); }
-
-    /* MODE TOGGLE */
-    .mode-toggle-wrap {
-      margin-bottom: 20px;
-    }
-    .mode-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--gray-400);
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      margin-bottom: 10px;
-      display: block;
-    }
-    .mode-toggle {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      background: var(--gray-100);
-      border-radius: var(--radius-sm);
-      padding: 4px;
-      border: 1px solid var(--gray-200);
-    }
-    .mode-option {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 11px 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--gray-400);
-      transition: var(--transition);
-      position: relative;
-    }
-    .mode-option input[type="radio"] {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
-    }
-    .mode-option.active-mode {
-      background: var(--white);
-      color: var(--navy);
-      box-shadow: var(--shadow-sm);
-    }
-    .mode-option.morning-active { color: var(--blue); }
-    .mode-option.evening-active { color: #d97706; }
-
-    /* CARD */
-    .student-card {
-      background: var(--white);
-      border-radius: var(--radius);
-      border: 1.5px solid var(--gray-200);
-      box-shadow: var(--shadow-md);
-      overflow: hidden;
-      margin-bottom: 16px;
-    }
-    .card-section {
-      padding: 22px 24px;
-      border-bottom: 1px solid var(--gray-100);
-    }
-    .card-section:last-child { border-bottom: none; }
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--gray-400);
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      margin-bottom: 14px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    /* FORM */
-    .form-group { margin-bottom: 14px; }
-    .form-label {
-      display: block;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--gray-600);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 7px;
-    }
-    .input-wrap { position: relative; }
-    .input-icon {
-      position: absolute;
-      left: 13px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--gray-400);
-      font-size: 13px;
-      pointer-events: none;
-    }
-    .form-input {
-      width: 100%;
-      padding: 12px 14px 12px 38px;
-      background: var(--gray-50);
-      border: 1.5px solid var(--gray-200);
-      border-radius: var(--radius-sm);
-      font-family: var(--font-body);
-      font-size: 14px;
-      color: var(--gray-800);
-      outline: none;
-      transition: var(--transition);
-    }
-    .form-input:focus {
-      border-color: var(--blue);
-      background: var(--white);
-      box-shadow: 0 0 0 3px rgba(10,108,220,0.08);
-    }
-
-    /* EVENING DESTINATION BLOCK */
-    #destinationBlock {
-      display: none;
-    }
-    #destinationBlock.visible { display: block; }
-
-    .dest-hint {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 12px 14px;
-      background: linear-gradient(135deg, #fff8e1, #fef3c7);
-      border: 1px solid #fcd34d;
-      border-radius: var(--radius-sm);
-      font-size: 13px;
-      color: #78350f;
-      margin-bottom: 14px;
-    }
-    .dest-hint i { margin-top: 1px; flex-shrink: 0; }
-
-    .btn-dest {
-      width: 100%;
-      padding: 13px;
-      background: linear-gradient(135deg, #d97706, #b45309);
-      color: white;
-      border: none;
-      border-radius: var(--radius-sm);
-      font-family: var(--font-display);
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: var(--transition);
-      box-shadow: 0 4px 14px rgba(180,83,9,0.3);
-    }
-    .btn-dest:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(180,83,9,0.4); }
-
-    /* REMINDER BOX */
-    #reminderBox {
-      display: none;
-      margin-top: 14px;
-      animation: fadeUp 0.3s ease both;
-    }
-    #reminderBox.visible { display: block; }
-
-    .reminder-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--gray-400);
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      margin-bottom: 10px;
-    }
-    .reminder-options {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-    }
-    .reminder-chip {
-      position: relative;
-    }
-    .reminder-chip input[type="checkbox"] {
-      position: absolute;
-      opacity: 0;
-      pointer-events: none;
-    }
-    .reminder-chip label {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      padding: 12px 8px;
-      border: 2px solid var(--gray-200);
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: var(--transition);
-      font-size: 12px;
-      color: var(--gray-600);
-      font-weight: 500;
-      background: var(--gray-50);
-    }
-    .reminder-chip label .dist-num {
-      font-family: var(--font-display);
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--gray-800);
-    }
-    .reminder-chip input:checked + label {
-      border-color: #d97706;
-      background: #fff8e1;
-      color: #b45309;
-    }
-    .reminder-chip input:checked + label .dist-num { color: #b45309; }
-    .reminder-chip label:hover { border-color: var(--gray-400); }
-
-    /* SHOW MAP BUTTON */
-    .btn-track {
-      width: 100%;
-      padding: 16px;
-      background: linear-gradient(135deg, var(--blue), #0052b0);
-      color: white;
-      border: none;
-      border-radius: var(--radius-sm);
-      font-family: var(--font-display);
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      transition: var(--transition);
-      box-shadow: 0 4px 20px rgba(10,108,220,0.35);
-      letter-spacing: 0.01em;
-    }
-    .btn-track:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(10,108,220,0.5);
-    }
-
-    /* STATUS MESSAGE */
-    .status-bar {
-      display: none;
-      align-items: center;
-      gap: 10px;
-      padding: 13px 18px;
-      border-radius: var(--radius-sm);
-      font-size: 14px;
-      font-weight: 500;
-      margin-top: 12px;
-      transition: var(--transition);
-    }
-    .status-bar.visible { display: flex; }
-    .status-bar.green {
-      background: var(--green-light);
-      border: 1.5px solid #6ee7b7;
-      color: #065f46;
-    }
-    .status-bar.yellow {
-      background: #fef3c7;
-      border: 1.5px solid #fcd34d;
-      color: #78350f;
-    }
-    .status-bar.red {
-      background: #fee2e2;
-      border: 1.5px solid #fca5a5;
-      color: #991b1b;
-    }
-    .status-bar.blue {
-      background: var(--blue-pale);
-      border: 1.5px solid #93c5fd;
-      color: #1e3a8a;
-    }
-
-    /* MAP */
-    #map {
-      display: none;
-      width: 100%;
-      height: 65vh;
-      border-top: 2px solid var(--gray-200);
-    }
-
-    footer {
-      background: var(--navy);
-      color: rgba(255,255,255,0.3);
-      text-align: center;
-      padding: 16px;
-      font-size: 12px;
-      margin-top: auto;
-    }
-
-    @media (max-width: 480px) {
-      .navbar { padding: 0 16px; }
-      .card-section { padding: 18px; }
-      .reminder-options { grid-template-columns: repeat(3, 1fr); }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="page-student">
 
   <!-- NAVBAR -->
   <nav class="navbar">
@@ -434,7 +19,9 @@
       <div class="brand-icon"><i class="fa-solid fa-bus"></i></div>
       Commute Assistant
     </a>
-    <span class="nav-tag"><i class="fa-solid fa-graduation-cap"></i> &nbsp;Student</span>
+    <span class="nav-tag tag-green">
+      <i class="fa-solid fa-graduation-cap"></i>&nbsp; Student
+    </span>
   </nav>
 
   <main>
@@ -442,7 +29,7 @@
 
       <div class="page-title">
         <h1>Track Your Bus</h1>
-        <p>Live GPS tracking with onboard detection & stop alerts</p>
+        <p>Live GPS tracking with onboard detection &amp; stop alerts</p>
       </div>
 
       <!-- MODE TOGGLE -->
@@ -475,7 +62,7 @@
             </div>
           </div>
 
-          <div class="form-group" style="margin-bottom:0">
+          <div class="form-group form-group-last">
             <label class="form-label" for="busNo">Bus Number</label>
             <div class="input-wrap">
               <i class="fa-solid fa-bus input-icon"></i>
@@ -486,7 +73,7 @@
 
         <!-- EVENING DESTINATION BLOCK -->
         <div class="card-section" id="destinationBlock">
-          <div class="section-title"><i class="fa-solid fa-map-pin"></i> Destination & Reminders</div>
+          <div class="section-title"><i class="fa-solid fa-map-pin"></i> Destination &amp; Reminders</div>
 
           <div class="dest-hint">
             <i class="fa-solid fa-lightbulb"></i>
@@ -499,7 +86,7 @@
           </button>
 
           <div id="reminderBox">
-            <div class="reminder-title"><i class="fa-solid fa-bell"></i> &nbsp;Alert me when bus is</div>
+            <div class="reminder-title"><i class="fa-solid fa-bell"></i>&nbsp; Alert me when bus is</div>
             <div class="reminder-options">
               <div class="reminder-chip">
                 <input type="checkbox" id="rem2km">
@@ -530,7 +117,7 @@
             Show Live Map
           </button>
 
-          <!-- Status message -->
+          <!-- Status message bar -->
           <div id="statusMsg" class="status-bar"></div>
         </div>
 
@@ -546,16 +133,12 @@
 
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-  <!-- Mode toggle visual handler -->
+  <!-- Mode toggle visual state handler -->
   <script>
     const modeLabels = document.querySelectorAll('.mode-option');
-    const morningOpt = document.querySelector('input[value="morning"]');
-    const eveningOpt = document.querySelector('input[value="evening"]');
-    const eveningLabel = document.getElementById('eveningLabel');
 
     document.querySelectorAll("input[name='tripMode']").forEach(el => {
       el.addEventListener("change", () => {
-        // Update visual active state
         modeLabels.forEach(l => {
           l.classList.remove('active-mode', 'morning-active', 'evening-active');
         });
@@ -567,7 +150,6 @@
       });
     });
 
-    // Also handle initial active state on click of label
     modeLabels.forEach(label => {
       label.addEventListener('click', () => {
         modeLabels.forEach(l => l.classList.remove('active-mode', 'morning-active', 'evening-active'));
@@ -581,7 +163,21 @@
     });
   </script>
 
-  <!-- Override setStatus for styled status bar -->
+  <!-- Destination block show/hide via class toggle -->
+  <script>
+    document.querySelectorAll("input[name='tripMode']").forEach(el => {
+      el.addEventListener("change", () => {
+        const destBlock = document.getElementById("destinationBlock");
+        if (el.value === "evening") {
+          destBlock.classList.add('visible');
+        } else {
+          destBlock.classList.remove('visible');
+        }
+      });
+    });
+  </script>
+
+  <!-- Styled status bar helper -->
   <script>
   function setStatusStyled(text) {
     const bar = document.getElementById("statusMsg");
@@ -604,34 +200,15 @@
   }
   </script>
 
-  <!-- Patch destinationBlock show/hide to use class instead of inline style -->
-  <script>
-    // Patch tripMode display logic
-    document.querySelectorAll("input[name='tripMode']").forEach(el => {
-      el.addEventListener("change", () => {
-        const destBlock = document.getElementById("destinationBlock");
-        if (el.value === "evening") {
-          destBlock.classList.add('visible');
-        } else {
-          destBlock.classList.remove('visible');
-        }
-      });
-    });
-  </script>
-
   <script src="/static/student.js"></script>
 
-  <!-- After student.js loads: patch setStatus and map display -->
+  <!-- Post-load: patch setStatus from student.js and wire reminder box -->
   <script>
-    // Patch the setStatus function from student.js
-    const _origSetStatus = window.setStatus;
     window.setStatus = function(text) {
       setStatusStyled(text);
     };
 
-    // Patch map display
-    const origShowBtn = document.getElementById('showMap');
-    origShowBtn.addEventListener('click', () => {
+    document.getElementById('showMap').addEventListener('click', () => {
       setTimeout(() => {
         const mapEl = document.getElementById('map');
         if (mapEl.style.display === 'block' || mapEl.style.display === '') {
@@ -640,8 +217,6 @@
       }, 100);
     });
 
-    // Patch reminder box visibility
-    const _origRem2 = document.getElementById('rem2km');
     document.getElementById('selectDestination').addEventListener('click', () => {
       document.getElementById('reminderBox').classList.add('visible');
     });
