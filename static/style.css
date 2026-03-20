@@ -1610,3 +1610,614 @@ body.page-admin main {
   .card-section { padding: 20px 24px; }
   .login-card   { padding: 36px 32px; }
 }
+
+
+/* ============================================================
+   14. ADMIN LOGIN — PURPLE VARIANT
+   Admin-specific overrides on top of the shared login styles
+   ============================================================ */
+
+/* Purple gradient icon — admin login page */
+.login-icon.login-icon-admin {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+}
+
+/* Purple submit button — admin login page */
+.btn-primary.btn-primary-admin {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  box-shadow: 0 4px 16px rgba(124,58,237,0.35);
+}
+
+@media (min-width: 900px) {
+  .btn-primary.btn-primary-admin:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(124,58,237,0.5);
+  }
+}
+
+/* Password visibility toggle button — inside input-wrap */
+.btn-pwd-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.35);
+  font-size: 14px;
+  padding: 4px;
+  min-height: auto;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.btn-pwd-toggle:hover { color: rgba(255,255,255,0.7); }
+
+
+/* ============================================================
+   15. DRIVER MANAGEMENT SYSTEM
+   All styles for the admin Drivers tab
+   ============================================================ */
+
+/* ── Tab navigation ── */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-bottom: 20px;
+}
+
+.admin-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+  min-height: 40px;
+}
+
+.admin-tab.active {
+  background: var(--white);
+  color: var(--navy);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-tab.active.tab-fleet   { color: var(--blue); }
+.admin-tab.active.tab-drivers { color: #7c3aed; }
+
+/* ── Tab panels ── */
+.tab-panel        { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Data source badge ── */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.source-badge.db    { background: var(--blue-pale);   color: var(--blue); }
+.source-badge.excel { background: var(--green-light); color: #065f46; }
+
+/* ── Add driver form card ── */
+.dm-add-card {
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.dm-add-card h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Icon inside the Add Driver heading */
+.icon-add-driver { color: #7c3aed; }
+
+.dm-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Driver management inputs ── */
+.dm-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--gray-800);
+  outline: none;
+  transition: var(--transition);
+  touch-action: manipulation;
+}
+
+.dm-input:focus {
+  border-color: var(--blue);
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(10,108,220,0.08);
+}
+
+.dm-input::placeholder { color: var(--gray-400); }
+
+/* ── Add driver button (purple) ── */
+.btn-add-driver {
+  min-height: 44px;
+  padding: 11px 20px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: var(--transition);
+  box-shadow: 0 4px 14px rgba(124,58,237,0.3);
+  touch-action: manipulation;
+  width: 100%;
+}
+
+.btn-add-driver:active { transform: scale(0.97); }
+
+/* ── Search + filter toolbar ── */
+.dm-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.dm-search-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.dm-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gray-400);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.dm-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px 11px 36px;
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--gray-800);
+  outline: none;
+  transition: var(--transition);
+}
+
+.dm-search:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(10,108,220,0.08);
+}
+
+.dm-search::placeholder { color: var(--gray-400); }
+
+.dm-filter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dm-select {
+  min-height: 40px;
+  padding: 9px 32px 9px 12px;
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--gray-800);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a9ab5' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  flex: 1;
+}
+
+.dm-count-label {
+  font-size: 12px;
+  color: var(--gray-400);
+  white-space: nowrap;
+}
+
+/* ── Driver list card ── */
+.dm-list-card {
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.dm-list-header {
+  display: grid;
+  grid-template-columns: 32px 1fr 1fr auto;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--gray-400);
+}
+
+.dm-driver-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 1fr auto;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gray-100);
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.dm-driver-row:last-child { border-bottom: none; }
+.dm-driver-row:hover      { background: var(--gray-50); }
+
+.dm-row-num {
+  font-size: 11px;
+  color: var(--gray-400);
+  font-weight: 500;
+}
+
+.dm-row-phone {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+.dm-row-name {
+  font-size: 13px;
+  color: var(--gray-600);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Placeholder text when driver has no name */
+.dm-name-empty {
+  color: var(--gray-400);
+  font-style: italic;
+}
+
+.dm-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Small edit button */
+.btn-edit-sm {
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--blue-light);
+  background: var(--blue-pale);
+  color: var(--blue);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  touch-action: manipulation;
+}
+
+.btn-edit-sm:hover { background: var(--blue); color: white; border-color: var(--blue); }
+
+/* Small delete button */
+.btn-del-sm {
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid #fca5a5;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  touch-action: manipulation;
+}
+
+.btn-del-sm:hover { background: #b91c1c; color: white; border-color: #b91c1c; }
+
+/* ── Inline edit state ── */
+.dm-driver-row.editing {
+  background: #fdf4ff;
+  border: 1.5px solid #d8b4fe;
+  border-radius: 8px;
+  margin: 4px 8px;
+  padding: 10px;
+  grid-template-columns: 1fr;
+}
+
+.edit-row-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-row-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-save-edit {
+  flex: 1;
+  height: 36px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  touch-action: manipulation;
+}
+
+.btn-cancel-edit {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ── Pagination ── */
+.dm-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+/* Hidden by default; JS adds .visible to show */
+.dm-pagination.hidden { display: none; }
+
+.dm-page-info {
+  font-size: 12px;
+  color: var(--gray-400);
+  text-align: center;
+  flex: 1;
+}
+
+.btn-page {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1.5px solid var(--gray-200);
+  background: var(--white);
+  color: var(--gray-600);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: var(--transition);
+  touch-action: manipulation;
+}
+
+.btn-page:disabled       { opacity: 0.35; cursor: not-allowed; }
+.btn-page.active-page    { background: var(--blue); color: white; border-color: var(--blue); }
+
+/* ── Loading spinner centred in dm-empty ── */
+.dm-spinner-centered {
+  margin: 0 auto 10px;
+}
+
+/* ── Toast notification ── */
+.dm-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--navy);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 999;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dm-toast.show    { transform: translateX(-50%) translateY(0); opacity: 1; }
+.dm-toast.success { background: #065f46; }
+.dm-toast.error   { background: #991b1b; }
+
+/* ── Delete confirm overlay ── */
+.dm-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10,37,64,0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dm-confirm-overlay.show { display: flex; }
+
+.dm-confirm-box {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+  animation: fadeUp 0.2s ease both;
+}
+
+.dm-confirm-icon {
+  width: 44px;
+  height: 44px;
+  background: #fee2e2;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #b91c1c;
+  margin-bottom: 14px;
+}
+
+.dm-confirm-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+
+.dm-confirm-msg {
+  font-size: 13px;
+  color: var(--gray-600);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.dm-confirm-btns {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-confirm-del {
+  flex: 1;
+  height: 42px;
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-confirm-cancel {
+  flex: 1;
+  height: 42px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ── Empty / loading state ── */
+.dm-empty {
+  text-align: center;
+  padding: 36px 20px;
+  color: var(--gray-400);
+}
+
+.dm-empty i {
+  font-size: 32px;
+  margin-bottom: 10px;
+  color: var(--gray-200);
+  display: block;
+}
+
+.dm-empty p { font-size: 13px; }
+
+/* ── Driver management responsive ── */
+@media (min-width: 480px) {
+  .dm-form-row       { flex-direction: row; }
+  .btn-add-driver    { width: auto; min-width: 130px; }
+  .dm-toolbar        { flex-direction: row; align-items: flex-start; }
+  .dm-filter-row     { flex-direction: row; }
+}
+
+@media (min-width: 900px) {
+  .btn-add-driver:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,0.4); }
+  .btn-page:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); background: var(--blue-pale); }
+}

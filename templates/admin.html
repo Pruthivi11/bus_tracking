@@ -32,59 +32,453 @@
 
   <main>
 
-    <!-- PAGE HEADER -->
-    <div class="page-header">
-      <div class="page-header-left">
-        <h1>Fleet Dashboard</h1>
-        <p>Monitor all active buses in real-time</p>
-      </div>
-      <button class="btn-refresh" onclick="loadBusData()">
-        <i class="fa-solid fa-rotate-right spin-icon"></i>
-        Refresh
+    <!-- TAB NAVIGATION -->
+    <div class="admin-tabs">
+      <button class="admin-tab tab-fleet active" onclick="switchTab('fleet')">
+        <i class="fa-solid fa-bus"></i> Fleet Monitor
+      </button>
+      <button class="admin-tab tab-drivers" onclick="switchTab('drivers')">
+        <i class="fa-solid fa-users"></i> Drivers
       </button>
     </div>
 
-    <!-- STATS STRIP — horizontal scroll on mobile, 3-col grid on tablet+ -->
-    <div class="stats-strip">
-      <div class="stat-card">
-        <div class="stat-icon blue"><i class="fa-solid fa-bus"></i></div>
-        <div>
-          <div class="stat-num" id="statTotal">–</div>
-          <div class="stat-lbl">Total Buses</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon green"><i class="fa-solid fa-signal"></i></div>
-        <div>
-          <div class="stat-num" id="statActive">–</div>
-          <div class="stat-lbl">Active Now</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon purple"><i class="fa-solid fa-clock"></i></div>
-        <div>
-          <div class="stat-num" id="statInactive">–</div>
-          <div class="stat-lbl">Inactive</div>
-        </div>
-      </div>
-    </div>
+    <!-- ═══════════════════════════════════════════
+         TAB 1: FLEET DASHBOARD
+         ═══════════════════════════════════════════ -->
+    <div id="panel-fleet" class="tab-panel active">
 
-    <!-- BUS GRID — 1 col mobile, 2 col tablet, auto-fill desktop -->
-    <div id="busData">
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <div class="loading-txt">Loading bus data…</div>
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Fleet Dashboard</h1>
+          <p>Monitor all active buses in real-time</p>
+        </div>
+        <button class="btn-refresh" onclick="loadBusData()">
+          <i class="fa-solid fa-rotate-right spin-icon"></i>
+          Refresh
+        </button>
       </div>
-    </div>
 
-    <div class="last-updated" id="lastUpdated"></div>
+      <div class="stats-strip">
+        <div class="stat-card">
+          <div class="stat-icon blue"><i class="fa-solid fa-bus"></i></div>
+          <div>
+            <div class="stat-num" id="statTotal">–</div>
+            <div class="stat-lbl">Total Buses</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fa-solid fa-signal"></i></div>
+          <div>
+            <div class="stat-num" id="statActive">–</div>
+            <div class="stat-lbl">Active Now</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple"><i class="fa-solid fa-clock"></i></div>
+          <div>
+            <div class="stat-num" id="statInactive">–</div>
+            <div class="stat-lbl">Inactive</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="busData">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <div class="loading-txt">Loading bus data…</div>
+        </div>
+      </div>
+      <div class="last-updated" id="lastUpdated"></div>
+
+    </div><!-- /panel-fleet -->
+
+
+    <!-- ═══════════════════════════════════════════
+         TAB 2: DRIVER MANAGEMENT
+         ═══════════════════════════════════════════ -->
+    <div id="panel-drivers" class="tab-panel">
+
+      <!-- Section header with data source badge -->
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Driver Management</h1>
+          <p>
+            Data source:&nbsp;
+            <span id="sourceBadge" class="source-badge">—</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- ADD DRIVER -->
+      <div class="dm-add-card">
+        <!-- icon-add-driver class applies color:#7c3aed via style.css -->
+        <h3>
+          <i class="fa-solid fa-user-plus icon-add-driver"></i>
+          Add New Driver
+        </h3>
+        <div class="dm-form-row">
+          <input
+            id="addPhone"
+            class="dm-input"
+            type="tel"
+            inputmode="numeric"
+            placeholder="Phone number (10 digits)"
+            maxlength="10"
+            autocomplete="off"
+          >
+          <input
+            id="addName"
+            class="dm-input"
+            type="text"
+            placeholder="Driver name (optional)"
+            autocomplete="off"
+          >
+          <button class="btn-add-driver" onclick="addDriver()">
+            <i class="fa-solid fa-plus"></i> Add Driver
+          </button>
+        </div>
+      </div>
+
+      <!-- SEARCH + FILTER TOOLBAR -->
+      <div class="dm-toolbar">
+        <div class="dm-search-wrap">
+          <i class="fa-solid fa-magnifying-glass dm-search-icon"></i>
+          <input
+            id="driverSearch"
+            class="dm-search"
+            type="search"
+            placeholder="Search by phone or name…"
+            oninput="onSearchInput()"
+            autocomplete="off"
+          >
+        </div>
+        <div class="dm-filter-row">
+          <select id="driverSort" class="dm-select" onchange="loadDrivers(1)">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+          <span class="dm-count-label" id="driverCount"></span>
+        </div>
+      </div>
+
+      <!-- DRIVER LIST -->
+      <div class="dm-list-card">
+        <div class="dm-list-header">
+          <span>#</span>
+          <span>Phone</span>
+          <span>Name</span>
+          <span>Actions</span>
+        </div>
+        <div id="driverListBody">
+          <div class="dm-empty">
+            <i class="fa-solid fa-users"></i>
+            <p>Loading drivers…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGINATION
+           Hidden by default via .dm-pagination.hidden class.
+           JS removes .hidden when totalPages > 1. -->
+      <div class="dm-pagination hidden" id="driverPagination">
+        <button class="btn-page" id="prevPageBtn" onclick="changePage(-1)">
+          <i class="fa-solid fa-chevron-left"></i> Prev
+        </button>
+        <div class="dm-page-info" id="pageInfo">Page 1 of 1</div>
+        <button class="btn-page" id="nextPageBtn" onclick="changePage(1)">
+          Next <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+
+    </div><!-- /panel-drivers -->
 
   </main>
 
   <footer>&copy; 2026 Commute Assistant</footer>
 
+  <!-- DELETE CONFIRMATION OVERLAY -->
+  <div class="dm-confirm-overlay" id="confirmOverlay">
+    <div class="dm-confirm-box">
+      <div class="dm-confirm-icon"><i class="fa-solid fa-trash"></i></div>
+      <div class="dm-confirm-title">Delete Driver?</div>
+      <div class="dm-confirm-msg" id="confirmMsg">This will permanently remove the driver.</div>
+      <div class="dm-confirm-btns">
+        <button class="btn-confirm-cancel" onclick="closeConfirm()">Cancel</button>
+        <button class="btn-confirm-del" onclick="confirmDeleteDriver()">
+          <i class="fa-solid fa-trash"></i> Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="dm-toast" id="dmToast"></div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       JAVASCRIPT — zero inline styles used here
+       All dynamic visibility is toggled via CSS classes
+       ═══════════════════════════════════════════════ -->
   <script>
-  console.log("Admin dashboard loaded");
+
+  // ── Tab switching ──────────────────────────────
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).classList.add('active');
+    document.querySelector('.tab-' + tab).classList.add('active');
+
+    if (tab === 'drivers' && !_driversLoaded) {
+      loadDrivers(1);
+      _driversLoaded = true;
+    }
+  }
+  let _driversLoaded = false;
+
+
+  // ── Toast ──────────────────────────────────────
+  let _toastTimer = null;
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('dmToast');
+    t.className = `dm-toast ${type} show`;
+    t.innerHTML = `<i class="fa-solid fa-${type === 'success' ? 'circle-check' : 'circle-xmark'}"></i> ${msg}`;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { t.classList.remove('show'); }, 3000);
+  }
+
+
+  // ── Pagination state ───────────────────────────
+  let _currentPage   = 1;
+  let _totalPages    = 1;
+  let _searchTimer   = null;
+  let _pendingDelete = null;
+
+  function onSearchInput() {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => loadDrivers(1), 350);
+  }
+
+  function changePage(delta) {
+    const next = _currentPage + delta;
+    if (next < 1 || next > _totalPages) return;
+    loadDrivers(next);
+  }
+
+
+  // ── Load drivers ───────────────────────────────
+  function loadDrivers(page = 1) {
+    _currentPage = page;
+    const search = encodeURIComponent(document.getElementById('driverSearch').value.trim());
+    const sort   = document.getElementById('driverSort').value;
+    const url    = `/admin/drivers?search=${search}&sort=${sort}&page=${page}&limit=10`;
+
+    // dm-spinner-centered class handles the margin centering via style.css
+    document.getElementById('driverListBody').innerHTML = `
+      <div class="dm-empty">
+        <div class="spinner dm-spinner-centered"></div>
+        <p>Loading…</p>
+      </div>`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const badge = document.getElementById('sourceBadge');
+        badge.textContent = data.source === 'db' ? '🗄 PostgreSQL' : '📄 Excel File';
+        badge.className   = `source-badge ${data.source}`;
+
+        document.getElementById('driverCount').textContent =
+          `${data.total} driver${data.total !== 1 ? 's' : ''}`;
+
+        _totalPages = data.total_pages;
+        renderDriverList(data.drivers, data.page, data.per_page);
+        renderPagination(data.page, data.total_pages);
+      })
+      .catch(() => {
+        document.getElementById('driverListBody').innerHTML = `
+          <div class="dm-empty">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <p>Failed to load drivers. Please refresh.</p>
+          </div>`;
+      });
+  }
+
+
+  // ── Render driver rows ─────────────────────────
+  function renderDriverList(drivers, page, perPage) {
+    const body = document.getElementById('driverListBody');
+
+    if (!drivers.length) {
+      body.innerHTML = `
+        <div class="dm-empty">
+          <i class="fa-solid fa-users"></i>
+          <p>No drivers found.</p>
+        </div>`;
+      return;
+    }
+
+    // dm-name-empty class handles the grey italic style via style.css
+    body.innerHTML = drivers.map((d, i) => `
+      <div class="dm-driver-row" id="row-${d.id}" data-id="${d.id}" data-phone="${d.phone}" data-name="${escHtml(d.name)}">
+        <span class="dm-row-num">${(page - 1) * perPage + i + 1}</span>
+        <span class="dm-row-phone">${d.phone}</span>
+        <span class="dm-row-name">${d.name || '<span class="dm-name-empty">—</span>'}</span>
+        <div class="dm-row-actions">
+          <button class="btn-edit-sm" onclick="startEdit(${d.id})" title="Edit">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+          <button class="btn-del-sm" onclick="askDelete(${d.id}, '${d.phone}')" title="Delete">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+
+  // ── Pagination controls ────────────────────────
+  function renderPagination(page, totalPages) {
+    const wrap = document.getElementById('driverPagination');
+
+    // Toggle visibility via CSS class instead of style.display
+    if (totalPages > 1) {
+      wrap.classList.remove('hidden');
+    } else {
+      wrap.classList.add('hidden');
+    }
+
+    document.getElementById('prevPageBtn').disabled = page <= 1;
+    document.getElementById('nextPageBtn').disabled = page >= totalPages;
+    document.getElementById('pageInfo').textContent = `Page ${page} of ${totalPages}`;
+  }
+
+
+  // ── Add driver ─────────────────────────────────
+  function addDriver() {
+    const phone = document.getElementById('addPhone').value.trim();
+    const name  = document.getElementById('addName').value.trim();
+
+    if (!phone) { showToast('Enter a phone number', 'error'); return; }
+
+    fetch('/admin/add-driver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, name })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showToast(data.error, 'error'); return; }
+      document.getElementById('addPhone').value = '';
+      document.getElementById('addName').value  = '';
+      showToast(`Driver ${data.phone} added successfully`);
+      loadDrivers(_currentPage);
+    })
+    .catch(() => showToast('Failed to add driver', 'error'));
+  }
+
+
+  // ── Inline edit ────────────────────────────────
+  function startEdit(id) {
+    cancelEdit();
+
+    const row = document.getElementById('row-' + id);
+    if (!row) return;
+
+    const phone = row.dataset.phone;
+    const name  = row.dataset.name;
+
+    row.classList.add('editing');
+    row.innerHTML = `
+      <div class="edit-row-fields">
+        <input id="editPhone-${id}" class="dm-input" type="tel" inputmode="numeric"
+               value="${escHtml(phone)}" placeholder="Phone" maxlength="10">
+        <input id="editName-${id}" class="dm-input" type="text"
+               value="${escHtml(name)}" placeholder="Name (optional)">
+        <div class="edit-row-actions">
+          <button class="btn-save-edit" onclick="saveEdit(${id})">
+            <i class="fa-solid fa-check"></i> Save
+          </button>
+          <button class="btn-cancel-edit" onclick="cancelEdit()">Cancel</button>
+        </div>
+      </div>`;
+
+    row.querySelector('input').focus();
+  }
+
+  function cancelEdit() {
+    loadDrivers(_currentPage);
+  }
+
+  function saveEdit(id) {
+    const phone = document.getElementById('editPhone-' + id).value.trim();
+    const name  = document.getElementById('editName-' + id).value.trim();
+
+    if (!phone) { showToast('Phone number is required', 'error'); return; }
+
+    fetch(`/admin/edit-driver/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, name })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showToast(data.error, 'error'); return; }
+      showToast('Driver updated');
+      loadDrivers(_currentPage);
+    })
+    .catch(() => showToast('Failed to update driver', 'error'));
+  }
+
+
+  // ── Delete with confirmation ───────────────────
+  function askDelete(id, phone) {
+    _pendingDelete = id;
+    document.getElementById('confirmMsg').textContent =
+      `Remove driver ${phone} from the authorised list? This cannot be undone.`;
+    document.getElementById('confirmOverlay').classList.add('show');
+  }
+
+  function closeConfirm() {
+    _pendingDelete = null;
+    document.getElementById('confirmOverlay').classList.remove('show');
+  }
+
+  function confirmDeleteDriver() {
+    if (!_pendingDelete) return;
+    const id = _pendingDelete;
+    closeConfirm();
+
+    fetch(`/admin/delete-driver/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast('Driver removed');
+        loadDrivers(_currentPage);
+      })
+      .catch(() => showToast('Failed to delete driver', 'error'));
+  }
+
+  document.getElementById('confirmOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeConfirm();
+  });
+
+
+  // ── HTML escape helper ─────────────────────────
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+
+  // ══════════════════════════════════════════════
+  // FLEET DASHBOARD
+  // Note: card.style.animationDelay is kept as JS
+  // because it is a dynamic computed value (i * 0.05s)
+  // that cannot be expressed as a static CSS class.
+  // ══════════════════════════════════════════════
 
   function timeSince(seconds) {
     if (seconds < 5)  return "just now";
@@ -94,8 +488,8 @@
 
   function getBusTypeInfo(type) {
     const map = {
-      boys:   { label: "Boys",   icon: "fa-mars",         cls: "type-boys" },
-      girls:  { label: "Girls",  icon: "fa-venus",        cls: "type-girls" },
+      boys:   { label: "Boys",   icon: "fa-mars",         cls: "type-boys"   },
+      girls:  { label: "Girls",  icon: "fa-venus",        cls: "type-girls"  },
       common: { label: "Common", icon: "fa-people-group", cls: "type-common" }
     };
     return map[type] || { label: type || "Unknown", icon: "fa-bus", cls: "type-common" };
@@ -133,14 +527,14 @@
           return;
         }
 
-        // Active buses first
         items.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
 
         items.forEach((bus, i) => {
           const typeInfo = getBusTypeInfo(bus.busType);
           const isActive = bus.active && bus.lastSeen <= 60;
-          const card = document.createElement("div");
+          const card     = document.createElement("div");
           card.className = `bus-card${isActive ? "" : " inactive"}`;
+          // animationDelay is a computed value (i * 0.05s) — must remain as JS
           card.style.animationDelay = `${i * 0.05}s`;
 
           const statusCls = isActive ? "meta-value active-color" : "meta-value inactive-color";
@@ -155,7 +549,6 @@
                 : `<span class="bus-status-pill status-offline"><i class="fa-solid fa-circle-xmark"></i>Offline</span>`
               }
             </div>
-
             <div class="bus-meta">
               <div class="meta-item">
                 <div class="meta-label">Latitude</div>
@@ -174,11 +567,9 @@
                 <div class="${statusCls}">${isActive ? "Active" : "Inactive"}</div>
               </div>
             </div>
-
             <span class="type-badge ${typeInfo.cls}">
               <i class="fa-solid ${typeInfo.icon}"></i> ${typeInfo.label} Bus
-            </span>
-          `;
+            </span>`;
           grid.appendChild(card);
         });
       })
@@ -194,7 +585,7 @@
 
   loadBusData();
   setInterval(loadBusData, 10000);
-  </script>
 
+  </script>
 </body>
 </html>
