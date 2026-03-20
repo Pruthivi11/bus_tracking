@@ -34,6 +34,14 @@ CORS(app)
 MAPBOX_KEY = os.environ.get("MAPBOX_KEY")
 
 # -----------------
+# ADMIN PASSWORD
+# Set the ADMIN_PASSWORD environment variable in production.
+# Falls back to "admin@123" for demo / development use only.
+# -----------------
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin@123")
+
+# -----------------
 # AUTHORIZED DRIVERS
 # -----------------
 
@@ -48,7 +56,7 @@ def load_drivers():
         AUTHORIZED_DRIVERS = set(
             drivers_df["phone"]
             .astype(str)
-            .str.replace(".0","", regex=False)
+            .str.replace(".0", "", regex=False)
             .str.strip()
         )
 
@@ -99,9 +107,9 @@ with app.app_context():
     db.create_all()
 
 
-# -----------------
+# =================
 # PAGES
-# -----------------
+# =================
 
 @app.route("/")
 def home():
@@ -113,16 +121,69 @@ def student():
     return render_template("student.html")
 
 
+# =================
+# ADMIN LOGIN
+# =================
+
+@app.route("/admin_login", methods=["GET", "POST"])
+def admin_login():
+    """
+    GET  → show the admin login form
+    POST → validate password, set session, redirect to dashboard
+    Already-authenticated users are forwarded straight to /admin.
+    """
+    # Skip login if already authenticated
+    if session.get("admin_logged_in"):
+        return redirect("/admin")
+
+    if request.method == "GET":
+        return render_template("admin_login.html")
+
+    password = request.form.get("password", "").strip()
+
+    if not password:
+        return render_template("admin_login.html", error="Enter the admin password")
+
+    if password != ADMIN_PASSWORD:
+        return render_template("admin_login.html", error="Incorrect password. Please try again.")
+
+    # Valid — create admin session
+    session["admin_logged_in"] = True
+    return redirect("/admin")
+
+
+# =================
+# ADMIN DASHBOARD (session-protected)
+# =================
+
 @app.route("/admin")
 def admin():
+    """
+    Protected route — requires admin session.
+    Direct URL access without a valid session redirects to /admin_login.
+    """
+    if not session.get("admin_logged_in"):
+        return redirect("/admin_login")
+
     return render_template("admin.html")
 
 
-# -----------------
-# DRIVER LOGIN
-# -----------------
+# =================
+# ADMIN LOGOUT
+# =================
 
-@app.route("/driver_login", methods=["GET","POST"])
+@app.route("/admin_logout")
+def admin_logout():
+    """Clears the admin session and redirects to the login page."""
+    session.pop("admin_logged_in", None)
+    return redirect("/admin_login")
+
+
+# =================
+# DRIVER LOGIN
+# =================
+
+@app.route("/driver_login", methods=["GET", "POST"])
 def driver_login():
 
     if request.method == "GET":
@@ -150,9 +211,9 @@ def driver_login():
     return redirect("/driver")
 
 
-# -----------------
-# DRIVER PAGE
-# -----------------
+# =================
+# DRIVER PAGE (session-protected)
+# =================
 
 @app.route("/driver")
 def driver():
@@ -171,9 +232,9 @@ def driver():
     return render_template("driver.html")
 
 
-# -----------------
-# LOGOUT
-# -----------------
+# =================
+# DRIVER LOGOUT
+# =================
 
 @app.route("/logout")
 def logout():
@@ -191,9 +252,9 @@ def logout():
     return redirect("/")
 
 
-# -----------------
+# =================
 # SEND OTP
-# -----------------
+# =================
 
 @app.route("/send_otp", methods=["POST"])
 def send_otp():
@@ -201,19 +262,19 @@ def send_otp():
     try:
 
         data = request.get_json(silent=True) or {}
-        phone = str(data.get("phone","")).strip()
+        phone = str(data.get("phone", "")).strip()
 
-        phone = phone.replace("+91","")
-        phone = phone.replace(" ","")
-        phone = phone.replace("-","")
+        phone = phone.replace("+91", "")
+        phone = phone.replace(" ", "")
+        phone = phone.replace("-", "")
 
         if not phone:
-            return jsonify({"error":"Phone required"}),400
+            return jsonify({"error": "Phone required"}), 400
 
         if phone not in AUTHORIZED_DRIVERS:
-            return jsonify({"error":"Driver not authorized"}),403
+            return jsonify({"error": "Driver not authorized"}), 403
 
-        otp = str(random.randint(1000,9999))
+        otp = str(random.randint(1000, 9999))
 
         driver = Driver.query.filter_by(phone=phone).first()
 
@@ -235,18 +296,18 @@ def send_otp():
         db.session.commit()
 
         return jsonify({
-            "msg":"OTP generated",
-            "otp":otp
+            "msg": "OTP generated",
+            "otp": otp
         })
 
     except Exception as e:
-        print("OTP ERROR:",e)
-        return jsonify({"error":"OTP failed"}),500
+        print("OTP ERROR:", e)
+        return jsonify({"error": "OTP failed"}), 500
 
 
-# -----------------
+# =================
 # BUS LOCATION UPDATE
-# -----------------
+# =================
 
 @app.route("/location", methods=["POST"])
 def location():
@@ -255,10 +316,10 @@ def location():
 
         data = request.get_json(silent=True) or {}
 
-        required = ("route","busType","lat","lng")
+        required = ("route", "busType", "lat", "lng")
 
         if not all(k in data for k in required):
-            return jsonify({"error":"Invalid data"}),400
+            return jsonify({"error": "Invalid data"}), 400
 
         route = data["route"]
 
@@ -287,17 +348,17 @@ def location():
 
         db.session.commit()
 
-        return jsonify({"status":"ok"})
+        return jsonify({"status": "ok"})
 
     except Exception as e:
 
-        print("LOCATION ERROR:",e)
-        return jsonify({"error":"location failed"}),500
+        print("LOCATION ERROR:", e)
+        return jsonify({"error": "location failed"}), 500
 
 
-# -----------------
+# =================
 # GET BUS LOCATIONS
-# -----------------
+# =================
 
 @app.route("/get_locations")
 def get_locations():
@@ -311,21 +372,18 @@ def get_locations():
         last_seen = int(diff.total_seconds())
 
         if last_seen > 60:
-
             if bus.active:
                 bus.active = False
-                
-
         else:
             bus.active = True
 
         result.append({
-            "route":bus.route,
-            "busType":bus.bus_type,
-            "lat":bus.lat,
-            "lng":bus.lng,
-            "lastSeen":last_seen,
-            "active":bus.active
+            "route": bus.route,
+            "busType": bus.bus_type,
+            "lat": bus.lat,
+            "lng": bus.lng,
+            "lastSeen": last_seen,
+            "active": bus.active
         })
 
     db.session.commit()
@@ -333,9 +391,9 @@ def get_locations():
     return jsonify(result)
 
 
-# -----------------
+# =================
 # END TRIP
-# -----------------
+# =================
 
 @app.route("/end_trip", methods=["POST"])
 def end_trip():
@@ -347,9 +405,9 @@ def end_trip():
 
     if bus:
         bus.active = False
-        bus.lat=None
-        bus.lng=None
+        bus.lat = None
+        bus.lng = None
 
     db.session.commit()
 
-    return jsonify({"status":"trip ended"})
+    return jsonify({"status": "trip ended"})

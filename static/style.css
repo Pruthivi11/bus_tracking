@@ -218,6 +218,41 @@ body.page-home  .nav-brand { font-size: 17px; }
 
 .nav-pill.driver-mode { background: #fff3cd; color: #b45309; }
 
+/* Logout button in navbar (admin dashboard) */
+.nav-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 50px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border: 1.5px solid var(--gray-200);
+  text-decoration: none;
+  transition: var(--transition);
+  white-space: nowrap;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.nav-logout-btn:hover,
+.nav-logout-btn:active {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+/* Hide label text on very small screens, keep icon only */
+.nav-logout-label {
+  display: none;
+}
+
+@media (min-width: 400px) {
+  .nav-logout-label { display: inline; }
+}
+
 .live-indicator {
   color: #1db97a;
   font-size: 7px;
