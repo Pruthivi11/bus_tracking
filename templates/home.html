@@ -24,8 +24,15 @@
     </span>
   </nav>
 
-  <!-- HERO -->
+  <!--
+    HERO — flex:1 column (fills viewport height after navbar)
+    Children in order:
+      1. hero-orbs    (position:absolute — decorative only, clipped by overflow-x:hidden)
+      2. hero-content (flex:1 — grows to fill space, pushes stats-bar to bottom)
+      3. stats-bar    (in normal flow — NOT position:absolute, no overlap on mobile)
+  -->
   <section class="hero">
+
     <div class="hero-orb orb-1"></div>
     <div class="hero-orb orb-2"></div>
     <div class="hero-orb orb-3"></div>
@@ -49,8 +56,9 @@
 
       <!--
         Role cards:
-        - Mobile  : horizontal list rows (role-icon + role-text + role-arrow)
-        - Tablet+ : 3-column grid with vertical card layout (CSS handles switch)
+        Mobile  (< 640px) — flex column, each card is a horizontal row
+        Tablet+ (≥ 640px) — 3-column grid, each card is a vertical tile
+        CSS at the 640px breakpoint handles the switch automatically.
       -->
       <div class="role-grid">
 
@@ -84,7 +92,7 @@
       </div>
     </div>
 
-    <!-- Stats strip pinned to bottom of hero -->
+    <!-- Stats bar: in-flow at bottom of flex column, no absolute positioning -->
     <div class="stats-bar">
       <div class="stat-item">
         <div class="stat-num">Live</div>
@@ -103,6 +111,7 @@
         <div class="stat-label">Refresh Rate</div>
       </div>
     </div>
+
   </section>
 
   <footer>
