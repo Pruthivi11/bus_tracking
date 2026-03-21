@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_                          # Change 4: explicit or_ import
 from datetime import datetime, timedelta
 from functools import wraps
 import os, re
@@ -16,62 +17,66 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 # ─────────────────────────────────────────────
 # DATABASE CONFIG
+# Change 1: Enforce DATABASE_URL — raise at startup if missing.
+#            No SQLite fallback, no silent None.
 # ─────────────────────────────────────────────
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Set it to a PostgreSQL connection string before starting the app."
+    )
+
+# Render.com historically returned postgres:// — normalise to postgresql://
+if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_DATABASE_URI"]    = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Change 6: Secure session cookies
+app.config["SESSION_COOKIE_HTTPONLY"]  = True
+app.config["SESSION_COOKIE_SECURE"]   = True        # requires HTTPS in production
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 db   = SQLAlchemy(app)
 CORS(app)
 
-MAPBOX_KEY          = os.environ.get("MAPBOX_KEY")
-ADMIN_PASSWORD      = os.environ.get("ADMIN_PASSWORD", "admin@123")
-EXCEL_PATH          = "drivers.xlsx"
-BUS_DETAILS_PATH    = "bus_details.xlsx"
+MAPBOX_KEY       = os.environ.get("MAPBOX_KEY")
+ADMIN_PASSWORD   = os.environ.get("ADMIN_PASSWORD", "admin@123")
+EXCEL_PATH       = "drivers.xlsx"
+BUS_DETAILS_PATH = "bus_details.xlsx"   # seed source only — runtime data lives in DB
 
 # ─────────────────────────────────────────────
-# BUS ROUTE LOOKUP  (in-memory from bus_details.xlsx)
+# BUS ROUTE CACHE  (cache-aside, backed by PostgreSQL)
 #
-# Loaded once at startup; refreshed by load_bus_details().
-# Maps bus_no (str) → bus_route (str), e.g. {"12": "Velachery"}
-# Gracefully empty if the file doesn't exist.
+# Architecture:
+#   1. /get-route calls get_bus_route(bus_no)
+#   2. get_bus_route checks BUS_ROUTE_CACHE first  (O(1) dict lookup)
+#   3. On cache miss → query BusDetails table → store result in cache
+#   4. Cache is pre-warmed at startup from the full BusDetails table
+#   5. Admin can force-flush via POST /admin/bus-routes/reload-cache
+#   6. Add/edit/delete bus route endpoints update cache immediately (Change 5)
 # ─────────────────────────────────────────────
 
-BUS_ROUTE_MAP: dict = {}
-
-def load_bus_details():
-    """Load bus_no → bus_route mapping from bus_details.xlsx into memory."""
-    global BUS_ROUTE_MAP
-    try:
-        df = pd.read_excel(BUS_DETAILS_PATH)
-        df["bus_no"]    = df["bus_no"].astype(str).str.strip()
-        df["bus_route"] = df["bus_route"].astype(str).str.strip()
-        BUS_ROUTE_MAP   = dict(zip(df["bus_no"], df["bus_route"]))
-        print(f"Bus details loaded: {len(BUS_ROUTE_MAP)} routes from {BUS_DETAILS_PATH}")
-    except FileNotFoundError:
-        print(f"[INFO] {BUS_DETAILS_PATH} not found — route recommendation disabled.")
-    except Exception as e:
-        print(f"Bus details load error: {e}")
+BUS_ROUTE_CACHE: dict = {}   # bus_no (str) → bus_route (str)
 
 
 # ─────────────────────────────────────────────
 # DATA SOURCE DETECTION
-#
-#   "db"    →  DATABASE_URL env var is set  →  use PostgreSQL / AuthorizedDriver table
-#   "excel" →  no DATABASE_URL             →  use drivers.xlsx
-#
-# Every driver-management function calls get_driver_source() first so the
-# active source is always resolved from one place.
+# Change 2: Derive source from the configured URI, not from DATABASE_URL env var.
 # ─────────────────────────────────────────────
 
-def get_driver_source():
-    """Return 'db' if a database URL is configured, else 'excel'."""
-    return "db" if DATABASE_URL else "excel"
+def get_driver_source() -> str:
+    """
+    Return 'db' when the configured database is PostgreSQL, else 'excel'.
+    Reads the actual SQLALCHEMY_DATABASE_URI so it always reflects what
+    SQLAlchemy is connected to, not just what was in the environment.
+    """
+    uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    return "db" if uri.startswith("postgresql") else "excel"
 
 
 # ─────────────────────────────────────────────
@@ -91,14 +96,14 @@ class Driver(db.Model):
 class AuthorizedDriver(db.Model):
     """
     Authorisation whitelist – phone numbers permitted to drive.
-    Replaces / mirrors the data previously stored only in drivers.xlsx.
-    Seeded automatically from Excel on first run when DATABASE_URL is set.
+    Seeded automatically from Excel on first run.
     """
     __tablename__ = "authorized_driver"
     id         = db.Column(db.Integer, primary_key=True)
     phone      = db.Column(db.String(20), unique=True, nullable=False, index=True)
     name       = db.Column(db.String(100), default="")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Change 3: index=True on created_at — used for ORDER BY in paginated queries
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
 class BusLocation(db.Model):
@@ -109,7 +114,7 @@ class BusLocation(db.Model):
     bus_route = db.Column(db.String(100), nullable=True)   # route area, e.g. "Velachery"
     lat       = db.Column(db.Float)
     lng       = db.Column(db.Float)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)   # already indexed
     active    = db.Column(db.Boolean, default=False)
 
 
@@ -119,14 +124,30 @@ class Onboard(db.Model):
     roll_no   = db.Column(db.String(20), nullable=False, index=True)
     bus_route = db.Column(db.String(20), nullable=False, index=True)
     onboard   = db.Column(db.Boolean, default=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    # Change 3: index=True on timestamp — queried when checking recent onboard events
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class BusDetails(db.Model):
+    """
+    Master list of bus numbers and their route areas.
+    Seeded once from bus_details.xlsx; managed via admin API thereafter.
+    PostgreSQL source of truth for route recommendations.
+    """
+    __tablename__ = "bus_details"
+    id        = db.Column(db.Integer, primary_key=True)
+    bus_no    = db.Column(db.String(50),  nullable=False, unique=True, index=True)
+    bus_route = db.Column(db.String(255), nullable=False)
+
+    def to_dict(self):
+        return {"id": self.id, "bus_no": self.bus_no, "bus_route": self.bus_route}
 
 
 # ─────────────────────────────────────────────
 # PHONE UTILITIES
 # ─────────────────────────────────────────────
 
-def _normalize_phone(raw):
+def _normalize_phone(raw) -> str:
     p = str(raw).strip()
     p = p.replace("+91", "").replace(" ", "").replace("-", "").replace(".0", "")
     return p
@@ -141,10 +162,89 @@ def _validate_phone(raw):
 
 
 # ─────────────────────────────────────────────
+# BUS DETAILS — SEED + CACHE HELPERS
+# ─────────────────────────────────────────────
+
+def _seed_bus_details_from_excel():
+    """
+    One-time migration: read bus_details.xlsx and insert rows into BusDetails table.
+    Skips rows where bus_no already exists (safe to call repeatedly).
+    """
+    try:
+        df = pd.read_excel(BUS_DETAILS_PATH)
+        df["bus_no"]    = df["bus_no"].astype(str).str.strip()
+        df["bus_route"] = df["bus_route"].astype(str).str.strip()
+
+        inserted = 0
+        for _, row in df.iterrows():
+            # Change 7: use str().strip() to guard against any NaN/None values
+            bus_no    = str(row["bus_no"]).strip()
+            bus_route = str(row["bus_route"]).strip()
+            if bus_no and bus_route:
+                if not BusDetails.query.filter_by(bus_no=bus_no).first():
+                    db.session.add(BusDetails(bus_no=bus_no, bus_route=bus_route))
+                    inserted += 1
+
+        db.session.commit()
+        print(f"BusDetails seeded: {inserted} new rows imported from {BUS_DETAILS_PATH}.")
+    except FileNotFoundError:
+        print(f"[INFO] {BUS_DETAILS_PATH} not found — BusDetails table not seeded.")
+    except Exception as e:
+        print(f"BusDetails seed error: {e}")
+
+
+def _warm_bus_route_cache():
+    """
+    Pre-warm BUS_ROUTE_CACHE from the BusDetails table.
+    Called once at startup and by POST /admin/bus-routes/reload-cache.
+    DATABASE_URL is now required, so there is no Excel fallback here.
+    """
+    global BUS_ROUTE_CACHE
+    try:
+        rows = BusDetails.query.all()
+        BUS_ROUTE_CACHE = {r.bus_no: r.bus_route for r in rows}
+        print(f"Bus route cache warmed: {len(BUS_ROUTE_CACHE)} entries from DB.")
+    except Exception as e:
+        print(f"Cache warm from DB failed: {e}")
+
+
+def get_bus_route(bus_no) -> str | None:
+    """
+    Cache-aside lookup for a bus route area.
+
+    1. Normalise input with str().strip()  (Change 7 — prevents NoneType crash)
+    2. Check BUS_ROUTE_CACHE              → return immediately on hit  (O(1))
+    3. On miss → query BusDetails DB table
+    4. Store result in cache for subsequent requests
+    5. Return None if not found anywhere
+    """
+    # Change 7: guard against None / non-string input
+    bus_no = str(bus_no).strip()
+
+    if not bus_no:
+        return None
+
+    # ── Cache hit ──
+    if bus_no in BUS_ROUTE_CACHE:
+        return BUS_ROUTE_CACHE[bus_no]
+
+    # ── Cache miss → DB lookup ──
+    try:
+        record = BusDetails.query.filter_by(bus_no=bus_no).first()
+        if record:
+            BUS_ROUTE_CACHE[bus_no] = record.bus_route   # populate cache on miss
+            return record.bus_route
+    except Exception as e:
+        print(f"BusDetails DB lookup error: {e}")
+
+    return None
+
+
+# ─────────────────────────────────────────────
 # STARTUP: create tables + load authorised drivers
 # ─────────────────────────────────────────────
 
-AUTHORIZED_DRIVERS = set()    # in-memory set used by send_otp for fast lookups
+AUTHORIZED_DRIVERS: set = set()    # in-memory set used by send_otp for fast lookups
 
 
 def _seed_db_from_excel():
@@ -163,7 +263,12 @@ def _seed_db_from_excel():
 
 
 def load_drivers():
-    """Populate AUTHORIZED_DRIVERS from the active data source."""
+    """
+    Populate AUTHORIZED_DRIVERS in-memory set from the active data source.
+    Since DATABASE_URL is now required, 'db' is always the source when
+    the URI starts with 'postgresql'. Excel fallback still exists for
+    local development without a full Postgres setup.
+    """
     global AUTHORIZED_DRIVERS
     source = get_driver_source()
 
@@ -185,7 +290,11 @@ def load_drivers():
 with app.app_context():
     db.create_all()
     load_drivers()
-    load_bus_details()
+
+    # Seed BusDetails from Excel on first run, then warm the route cache
+    if BusDetails.query.count() == 0:
+        _seed_bus_details_from_excel()
+    _warm_bus_route_cache()
 
 
 # ─────────────────────────────────────────────
@@ -196,7 +305,8 @@ def _drivers_get_all_db(search, sort, page, per_page):
     q = AuthorizedDriver.query
     if search:
         t = f"%{search}%"
-        q = q.filter(db.or_(
+        # Change 4: use imported or_() instead of db.or_()
+        q = q.filter(or_(
             AuthorizedDriver.phone.ilike(t),
             AuthorizedDriver.name.ilike(t)
         ))
@@ -234,8 +344,8 @@ def _drivers_get_all_excel(search, sort, page, per_page):
     if sort != "oldest":
         df = df.iloc[::-1].reset_index(drop=True)
 
-    total = len(df)
-    start = (page - 1) * per_page
+    total   = len(df)
+    start   = (page - 1) * per_page
     page_df = df.iloc[start: start + per_page]
 
     return [
@@ -296,8 +406,7 @@ def _update_driver_excel(driver_id, new_phone, new_name):
         return False, "Driver not found.", None
 
     old_phone = df.iloc[idx]["phone"]
-
-    others = df.drop(index=idx)
+    others    = df.drop(index=idx)
     if new_phone in others["phone"].values:
         return False, "Phone number already used by another driver.", None
 
@@ -331,7 +440,7 @@ def _delete_driver_excel(driver_id):
         return False, "Driver not found.", None
 
     old_phone = df.iloc[idx]["phone"]
-    df = df.drop(index=idx).reset_index(drop=True)
+    df        = df.drop(index=idx).reset_index(drop=True)
     df.to_excel(EXCEL_PATH, index=False)
     return True, None, old_phone
 
@@ -434,7 +543,7 @@ def admin_get_drivers():
 @app.route("/admin/add-driver", methods=["POST"])
 @admin_required
 def admin_add_driver():
-    data  = request.get_json(silent=True) or {}
+    data       = request.get_json(silent=True) or {}
     phone, err = _validate_phone(data.get("phone", ""))
     if err:
         return jsonify({"error": err}), 400
@@ -453,7 +562,7 @@ def admin_add_driver():
 @app.route("/admin/edit-driver/<int:driver_id>", methods=["PUT"])
 @admin_required
 def admin_edit_driver(driver_id):
-    data      = request.get_json(silent=True) or {}
+    data           = request.get_json(silent=True) or {}
     new_phone, err = _validate_phone(data.get("phone", ""))
     if err:
         return jsonify({"error": err}), 400
@@ -504,26 +613,178 @@ def admin_driver_source():
 # ─────────────────────────────────────────────
 
 @app.route("/get-route")
-def get_route():
+def get_route_api():
     """
     GET /get-route?bus_no=12
 
-    Returns the recommended route area for a given bus number,
-    looked up from bus_details.xlsx (loaded into BUS_ROUTE_MAP at startup).
+    Returns the recommended route area for a given bus number.
+    Lookup order: BUS_ROUTE_CACHE (O(1)) → BusDetails DB → not found.
 
     Response (found):    { "bus_no": "12", "bus_route": "Velachery", "found": true }
     Response (not found):{ "bus_no": "99", "bus_route": "",          "found": false }
     """
+    # Change 7: str() + strip() guards against None from missing query param
     bus_no = str(request.args.get("bus_no", "")).strip()
 
     if not bus_no:
         return jsonify({"error": "bus_no is required"}), 400
 
-    route_area = BUS_ROUTE_MAP.get(bus_no, "")
+    route_area = get_bus_route(bus_no)
     return jsonify({
         "bus_no":    bus_no,
-        "bus_route": route_area,
+        "bus_route": route_area or "",
         "found":     bool(route_area)
+    })
+
+
+# ─────────────────────────────────────────────
+# ADMIN — BUS DETAILS MANAGEMENT
+# ─────────────────────────────────────────────
+
+@app.route("/admin/bus-routes")
+@admin_required
+def admin_get_bus_routes():
+    """
+    GET /admin/bus-routes?search=&page=1&limit=20
+    Returns paginated bus details with current cache size.
+    """
+    search   = request.args.get("search", "").strip()
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = max(1, min(100, int(request.args.get("limit", 20))))
+
+    q = BusDetails.query
+
+    if search:
+        term = f"%{search}%"
+        # Change 4: use imported or_() instead of db.or_()
+        q = q.filter(or_(
+            BusDetails.bus_no.ilike(term),
+            BusDetails.bus_route.ilike(term)
+        ))
+
+    q     = q.order_by(BusDetails.bus_no.asc())
+    total = q.count()
+    rows  = q.offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify({
+        "routes":      [r.to_dict() for r in rows],
+        "total":       total,
+        "page":        page,
+        "per_page":    per_page,
+        "total_pages": max(1, -(-total // per_page)),
+        "cache_size":  len(BUS_ROUTE_CACHE)
+    })
+
+
+@app.route("/admin/bus-routes/add", methods=["POST"])
+@admin_required
+def admin_add_bus_route():
+    """
+    POST /admin/bus-routes/add
+    Body: { "bus_no": "16", "bus_route": "Sholinganallur" }
+
+    Inserts a new BusDetails record and immediately updates BUS_ROUTE_CACHE
+    so the cache stays consistent without requiring a manual reload. (Change 5)
+    """
+    data      = request.get_json(silent=True) or {}
+    # Change 7: str().strip() on both fields
+    bus_no    = str(data.get("bus_no",    "")).strip()
+    bus_route = str(data.get("bus_route", "")).strip()
+
+    if not bus_no or not bus_route:
+        return jsonify({"error": "bus_no and bus_route are required"}), 400
+
+    if BusDetails.query.filter_by(bus_no=bus_no).first():
+        return jsonify({"error": f"Bus number '{bus_no}' already exists."}), 409
+
+    record = BusDetails(bus_no=bus_no, bus_route=bus_route)
+    db.session.add(record)
+    db.session.commit()
+
+    # Change 5: update cache immediately on write
+    BUS_ROUTE_CACHE[bus_no] = bus_route
+
+    return jsonify({"status": "ok", "bus_no": bus_no, "bus_route": bus_route})
+
+
+@app.route("/admin/bus-routes/<int:route_id>", methods=["PUT"])
+@admin_required
+def admin_edit_bus_route(route_id):
+    """
+    PUT /admin/bus-routes/<id>
+    Body: { "bus_no": "16", "bus_route": "New Area" }
+
+    Updates a BusDetails record and immediately syncs BUS_ROUTE_CACHE. (Change 5)
+    Removes the old bus_no key from cache if it changed.
+    """
+    data      = request.get_json(silent=True) or {}
+    # Change 7: str().strip() on both fields
+    new_bus_no    = str(data.get("bus_no",    "")).strip()
+    new_bus_route = str(data.get("bus_route", "")).strip()
+
+    if not new_bus_no or not new_bus_route:
+        return jsonify({"error": "bus_no and bus_route are required"}), 400
+
+    record = BusDetails.query.get(route_id)
+    if not record:
+        return jsonify({"error": "Bus route not found."}), 404
+
+    # Check for duplicate bus_no (excluding this record)
+    dup = BusDetails.query.filter(
+        BusDetails.bus_no == new_bus_no,
+        BusDetails.id != route_id
+    ).first()
+    if dup:
+        return jsonify({"error": f"Bus number '{new_bus_no}' already used by another route."}), 409
+
+    old_bus_no = record.bus_no
+    record.bus_no    = new_bus_no
+    record.bus_route = new_bus_route
+    db.session.commit()
+
+    # Change 5: update cache immediately — remove old key, set new key
+    if old_bus_no != new_bus_no:
+        BUS_ROUTE_CACHE.pop(old_bus_no, None)
+    BUS_ROUTE_CACHE[new_bus_no] = new_bus_route
+
+    return jsonify({"status": "ok", "bus_no": new_bus_no, "bus_route": new_bus_route})
+
+
+@app.route("/admin/bus-routes/<int:route_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_bus_route(route_id):
+    """
+    DELETE /admin/bus-routes/<id>
+
+    Deletes a BusDetails record and removes it from BUS_ROUTE_CACHE. (Change 5)
+    """
+    record = BusDetails.query.get(route_id)
+    if not record:
+        return jsonify({"error": "Bus route not found."}), 404
+
+    bus_no = record.bus_no
+    db.session.delete(record)
+    db.session.commit()
+
+    # Change 5: remove from cache immediately on delete
+    BUS_ROUTE_CACHE.pop(bus_no, None)
+
+    return jsonify({"status": "ok", "deleted_bus_no": bus_no})
+
+
+@app.route("/admin/bus-routes/reload-cache", methods=["POST"])
+@admin_required
+def admin_reload_bus_cache():
+    """
+    POST /admin/bus-routes/reload-cache
+    Flushes and re-warms BUS_ROUTE_CACHE from the DB.
+    Useful after bulk edits performed outside the API.
+    """
+    _warm_bus_route_cache()
+    return jsonify({
+        "status":     "ok",
+        "cache_size": len(BUS_ROUTE_CACHE),
+        "message":    f"Cache reloaded — {len(BUS_ROUTE_CACHE)} routes cached."
     })
 
 
@@ -629,7 +890,7 @@ def location():
             return jsonify({"error": "Invalid data"}), 400
 
         route     = data["route"]
-        bus_route = data.get("busRoute", "")   # optional route area
+        bus_route = data.get("busRoute", "")   # optional route area from driver
         bus       = BusLocation.query.filter_by(route=route).first()
 
         if bus:
