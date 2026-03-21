@@ -23,16 +23,49 @@ const BASE_URL = (typeof window.BASE_URL === 'string' ? window.BASE_URL : '').re
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
-let map              = null;
-let busMarkers       = {};
-let studentMarker    = null;
+let map               = null;
+let busMarkers        = {};
+let studentMarker     = null;
 let destinationMarker = null;
-let isOnboard        = false;
-let lastBusPosition  = {};
-let destination      = null;
-let tripMode         = "morning";
+let isOnboard         = false;
+let lastBusPosition   = {};
+let destination       = null;
+let tripMode          = "morning";
 
 let reminders = {};   // legacy — kept so no reference errors; logic replaced by proximityAlerts
+
+
+// ─────────────────────────────────────────────
+// SMART POLLING STATE
+//
+// onboardTriggered — once-trigger guard; set true when the student
+//   boards so the onboard POST fires exactly once per trip session.
+//   Separate from isOnboard so the two concerns are explicit.
+//
+// lastDistance — last known bus-to-student distance in metres.
+//   Used by shouldRecalculate() to skip redundant work when the
+//   student has barely moved (< 10 m change).
+//
+// pollingInterval — current fetch interval in milliseconds.
+//   Starts at 5 s; shrinks to 2 s when close to the bus,
+//   grows to 15 s when far away.
+//
+// pollingTimer — handle returned by setInterval(); cleared and
+//   restarted by updatePolling() when the interval changes.
+//   The timer is the single driver of /get_locations fetches.
+//   watchPosition only updates the student marker, not the fetch.
+// ─────────────────────────────────────────────
+
+let onboardTriggered = false;
+let lastDistance     = null;
+
+const POLL_FAR    = 15000;   // ms  — bus > 1000 m away
+const POLL_MID    = 5000;    // ms  — bus 100 m – 1000 m away
+const POLL_NEAR   = 2000;    // ms  — bus < 100 m away
+const POLL_DEFAULT = POLL_MID;
+
+let pollingInterval = POLL_DEFAULT;
+let pollingTimer    = null;
 
 
 // ─────────────────────────────────────────────
@@ -564,13 +597,156 @@ function animateMarker(route, newLat, newLng) {
 // checkDestinationReminder replaced by checkProximityAlerts() above
 
 
+// ═══════════════════════════════════════════════════════════════════
+// SMART POLLING  — dynamic interval + once-trigger onboard detection
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Decide whether to run the full onboard/proximity/polling update.
+ *
+ * Returns true only when the bus-to-student distance has changed by
+ * at least 10 metres since the last check. This filters out GPS jitter
+ * (the device reports tiny position changes even when stationary) and
+ * avoids wasting CPU on Haversine + DOM updates every 2–5 seconds when
+ * nothing meaningful has moved.
+ *
+ * Always returns true on the very first call (lastDistance === null).
+ *
+ * @param {number} distance — current bus-to-student distance in metres
+ * @returns {boolean}
+ */
+function shouldRecalculate(distance) {
+  if (lastDistance === null) {
+    lastDistance = distance;
+    return true;
+  }
+  if (Math.abs(distance - lastDistance) >= 10) {
+    lastDistance = distance;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Adjust the polling interval based on how close the bus is.
+ * Clears and restarts pollingTimer only when the interval actually changes,
+ * avoiding unnecessary timer churn.
+ *
+ * Distance bands:
+ *   > 1000 m  →  15 s  (bus is far — save bandwidth + battery)
+ *   100–1000 m →  5 s  (approaching — normal tracking)
+ *   < 100 m   →  2 s  (very close — high-frequency for onboard detection)
+ *
+ * @param {number} distance — current bus-to-student distance in metres
+ */
+function updatePolling(distance) {
+  const newInterval =
+    distance > 1000 ? POLL_FAR  :
+    distance > 100  ? POLL_MID  :
+                      POLL_NEAR ;
+
+  if (newInterval === pollingInterval) return;   // no change — leave timer alone
+
+  console.log(
+    `[polling] interval ${pollingInterval / 1000}s → ${newInterval / 1000}s ` +
+    `(dist=${distance.toFixed(0)}m)`
+  );
+
+  pollingInterval = newInterval;
+  clearInterval(pollingTimer);
+  pollingTimer = setInterval(_pollTick, pollingInterval);
+}
+
+/**
+ * Called when the bus is found and active in loadBusLocations.
+ * Orchestrates the three distance-based behaviours:
+ *   1. shouldRecalculate — skip if position barely changed
+ *   2. checkOnboard      — once-trigger boarding detection (morning)
+ *   3. updatePolling     — dynamic fetch interval adjustment
+ *
+ * @param {number} distance      — bus-to-student metres
+ * @param {number} studentLat
+ * @param {number} studentLng
+ * @param {object} matchingBus   — bus record from /get_locations
+ * @param {string} busNo         — normalised route number
+ */
+function handleLocationUpdate(distance, studentLat, studentLng, matchingBus, busNo) {
+  if (!shouldRecalculate(distance)) return;   // skip — nothing meaningful changed
+
+  // ── Once-trigger onboard detection (morning mode only) ──
+  if (
+    tripMode === "morning" &&
+    !onboardTriggered &&
+    typeof studentLat === "number" &&
+    typeof studentLng === "number" &&
+    distance <= 20
+  ) {
+    onboardTriggered = true;
+    isOnboard        = true;
+
+    fetch(`${BASE_URL}/onboard`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rollNo:   rollNoEl.value,
+        busRoute: busNo,
+        onboard:  true
+      })
+    }).catch(err => console.error("[onboard] POST failed:", err));
+
+    if (studentMarker) {
+      studentMarker.remove();
+      studentMarker = null;
+    }
+
+    setStatus(`🟢 ONBOARD Bus ${busNo} (${matchingBus.busType})`);
+    console.log(`[onboard] triggered once — dist=${distance.toFixed(0)}m`);
+  }
+
+  // ── Dynamic polling interval ──
+  updatePolling(distance);
+}
+
+/**
+ * Reset all polling and onboard state.
+ * Called each time the student clicks "Show Live Map" so a fresh
+ * tracking session starts cleanly.
+ */
+function resetPollingState() {
+  onboardTriggered = false;
+  lastDistance     = null;
+  pollingInterval  = POLL_DEFAULT;
+  clearInterval(pollingTimer);
+  pollingTimer     = null;
+  isOnboard        = false;
+  console.log("[polling] state reset");
+}
+
+
 // ─────────────────────────────────────────────
 // FETCH BUS LOCATIONS
 //
 // Route number is normalised to UPPERCASE before comparison,
 // matching backend _normalize_route() and driver-side .toUpperCase().
 // Logs the full API response to the console for easy debugging.
+//
+// This function is called by _pollTick() (the dynamic timer).
+// Student lat/lng come from _lastStudentLat/_lastStudentLng,
+// updated by watchPosition in the showBtn listener.
 // ─────────────────────────────────────────────
+
+/**
+ * Last known student position, updated by watchPosition.
+ * Used by _pollTick so the timer doesn't need access to GPS callbacks.
+ */
+let _lastStudentLat = null;
+let _lastStudentLng = null;
+
+/** Single polling tick — reads the last known student position. */
+function _pollTick() {
+  loadBusLocations(_lastStudentLat, _lastStudentLng);
+}
+
 async function loadBusLocations(studentLat, studentLng) {
   // Normalise exactly as backend does: strip + uppercase
   const busNo = busNoEl.value.trim().toUpperCase();
@@ -607,7 +783,7 @@ async function loadBusLocations(studentLat, studentLng) {
     return;
   }
 
-  // ── Step 4: Log full response (visible in browser DevTools console) ──
+  // ── Step 4: Log full response ──
   console.log(`[loadBusLocations] full API response (${data.length} record(s)):`, data);
 
   if (!Array.isArray(data)) {
@@ -617,7 +793,6 @@ async function loadBusLocations(studentLat, studentLng) {
   }
 
   // ── Step 5: find matching bus ──
-  // Both sides normalised: backend stores UPPERCASE, we compare UPPERCASE
   const matchingBus = data.find(b => String(b.route).trim().toUpperCase() === busNo);
 
   console.log(
@@ -645,7 +820,7 @@ async function loadBusLocations(studentLat, studentLng) {
     return;
   }
 
-  // ── Bus is active ──
+  // ── Bus is active — place or animate marker ──
   if (!busMarkers[matchingBus.route]) {
     busMarkers[matchingBus.route] = createBusMarker(
       matchingBus.route, matchingBus.lat, matchingBus.lng
@@ -658,34 +833,18 @@ async function loadBusLocations(studentLat, studentLng) {
 
   if (tripMode === "evening") checkProximityAlerts(matchingBus);
 
-  // ── Onboard detection (morning mode) ──
+  // ── Smart polling + once-trigger onboard detection ──
+  // Delegates to handleLocationUpdate() which gates all work behind
+  // shouldRecalculate() — skips redundant computation on minor GPS jitter.
   if (
     typeof studentLat === "number" &&
     typeof studentLng === "number" &&
-    !isOnboard &&
-    tripMode === "morning"
+    matchingBus.lat != null &&
+    matchingBus.lng != null &&
+    !isOnboard
   ) {
     const dist = getDistance(studentLat, studentLng, matchingBus.lat, matchingBus.lng);
-
-    if (dist <= 20) {
-      fetch(`${BASE_URL}/onboard`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rollNo:   rollNoEl.value,
-          busRoute: busNo,
-          onboard:  true
-        })
-      }).catch(err => console.error("[onboard] POST failed:", err));
-
-      if (studentMarker) {
-        studentMarker.remove();
-        studentMarker = null;
-      }
-
-      isOnboard = true;
-      setStatus(`🟢 ONBOARD Bus ${busNo} (${matchingBus.busType})`);
-    }
+    handleLocationUpdate(dist, studentLat, studentLng, matchingBus, busNo);
   }
 }
 
@@ -695,8 +854,8 @@ async function loadBusLocations(studentLat, studentLng) {
 // ─────────────────────────────────────────────
 showBtn.addEventListener("click", () => {
   const roll   = rollNoEl.value.trim();
-  const busNo  = busNoEl.value.trim();          // resolved route_no (hidden field)
-  const search = studentSearchEl.value.trim();  // what the student typed / selected
+  const busNo  = busNoEl.value.trim();
+  const search = studentSearchEl.value.trim();
 
   if (!roll) {
     alert("Enter your Roll Number");
@@ -704,7 +863,6 @@ showBtn.addEventListener("click", () => {
   }
 
   if (!busNo) {
-    // Student typed something but didn't pick from the dropdown
     if (search) {
       alert("Select a route from the suggestions below your search.");
     } else {
@@ -719,14 +877,20 @@ showBtn.addEventListener("click", () => {
   if (!map) initMap([80.2707, 13.0827]);
   map.resize();
 
-  isOnboard = false;
+  // Reset all polling and onboard state for a clean tracking session
+  resetPollingState();
 
+  // ── GPS: update student position + marker only ──
+  // fetchBusLocations is NOT called here — the polling timer owns all fetches.
+  // This eliminates the race where watchPosition and setInterval fire
+  // almost simultaneously and double-hit /get_locations.
   navigator.geolocation.watchPosition(
     pos => {
       const { latitude, longitude } = pos.coords;
+      _lastStudentLat = latitude;
+      _lastStudentLng = longitude;
       map.setCenter([longitude, latitude]);
       placeStudentMarker(latitude, longitude);
-      loadBusLocations(latitude, longitude);
     },
     err => {
       console.error("[geolocation] error:", err);
@@ -735,14 +899,10 @@ showBtn.addEventListener("click", () => {
     { enableHighAccuracy: true, maximumAge: 1000 }
   );
 
-  // Poll every 5 seconds using the student marker position
-  setInterval(() => {
-    if (studentMarker) {
-      const pos = studentMarker.getLngLat();
-      loadBusLocations(pos.lat, pos.lng);
-    } else {
-      // Still poll even without a student marker (e.g. GPS denied)
-      loadBusLocations(null, null);
-    }
-  }, 5000);
+  // ── Fetch immediately, then start the dynamic polling timer ──
+  // Fire one fetch right away so the student doesn't wait up to
+  // POLL_DEFAULT seconds to see the first result.
+  _pollTick();
+  pollingTimer = setInterval(_pollTick, pollingInterval);
+  console.log(`[polling] started — initial interval ${pollingInterval / 1000}s`);
 });

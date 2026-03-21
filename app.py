@@ -44,6 +44,44 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 db = SQLAlchemy(app)
 
 # ─────────────────────────────────────────────
+# REDIS CACHE  (optional — graceful fallback if not configured)
+#
+# Set REDIS_URL env var to enable caching.
+# Render's Redis add-on exposes this automatically.
+# When absent or unreachable, all Redis operations are silently
+# skipped and the app falls back to direct DB queries.
+#
+# Cached keys:
+#   "bus_locations"          → /get_locations response, TTL 4s
+#                              Invalidated by /location and /end_trip writes.
+#
+# Keys intentionally NOT cached:
+#   BUS_ROUTE_CACHE          → already an in-memory Python dict (faster than Redis)
+#   /search_routes per-query → live data already from BUS_ROUTE_CACHE + one DB call
+# ─────────────────────────────────────────────
+
+redis_client = None
+
+_REDIS_URL = os.environ.get("REDIS_URL")
+if _REDIS_URL:
+    try:
+        import redis as _redis_lib
+        redis_client = _redis_lib.from_url(
+            _REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        # Verify connection at startup
+        redis_client.ping()
+        print(f"[redis] connected — caching enabled")
+    except Exception as _e:
+        print(f"[redis] connection failed ({_e}) — running without cache")
+        redis_client = None
+else:
+    print("[redis] REDIS_URL not set — running without cache")
+
+# ─────────────────────────────────────────────
 # CORS
 #
 # FRONTEND_ORIGIN env var controls which origin is allowed.
@@ -168,8 +206,16 @@ class BusLocation(db.Model):
     bus_route = db.Column(db.String(100), nullable=True)   # route area, e.g. "Velachery"
     lat       = db.Column(db.Float)
     lng       = db.Column(db.Float)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)   # already indexed
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     active    = db.Column(db.Boolean, default=False)
+
+    __table_args__ = (
+        # Composite index accelerates the combined (route, timestamp) access pattern
+        # used by /get_locations when ordering or filtering recent updates per route.
+        # Created via _run_migrations() at startup using CREATE INDEX IF NOT EXISTS
+        # so it is added safely to pre-existing tables without data loss.
+        db.Index("idx_bus_location_route_ts", "route", "timestamp"),
+    )
 
 
 class Onboard(db.Model):
@@ -192,6 +238,13 @@ class BusDetails(db.Model):
     id        = db.Column(db.Integer, primary_key=True)
     bus_no    = db.Column(db.String(50),  nullable=False, unique=True, index=True)
     bus_route = db.Column(db.String(255), nullable=False)
+
+    __table_args__ = (
+        # Standard B-tree index on bus_route for equality and prefix lookups.
+        # A GIN trigram index (for fast ILIKE '%...%') is created separately
+        # in _run_migrations() after ensuring the pg_trgm extension is enabled.
+        db.Index("idx_bus_details_route_area", "bus_route"),
+    )
 
     def to_dict(self):
         return {"id": self.id, "bus_no": self.bus_no, "bus_route": self.bus_route}
@@ -264,42 +317,36 @@ def is_bus_active(last_updated) -> bool:
 
 
 # ─────────────────────────────────────────────
-# COLUMN MIGRATION HELPER
+# MIGRATION HELPER
 #
-# db.create_all() creates missing tables but NEVER alters existing ones.
-# Any column added to a SQLAlchemy model after initial deployment will be
-# present in Python but absent from the live PostgreSQL table, causing
-# "UndefinedColumn" errors at runtime.
+# Handles two classes of schema drift that db.create_all() cannot fix:
 #
-# _run_column_migrations() closes this gap by:
-#   1. Inspecting the live DB schema via SQLAlchemy's Inspector
-#   2. Comparing it against each model's column definitions
-#   3. Issuing ALTER TABLE … ADD COLUMN IF NOT EXISTS for any gap
+#   1. MISSING COLUMNS — columns added to SQLAlchemy models after the
+#      initial deployment are absent from the live DB table.
+#      Fixed by: ALTER TABLE … ADD COLUMN IF NOT EXISTS
 #
-# This is idempotent — safe to call on every app restart.
-# It preserves all existing data and never drops or modifies columns.
+#   2. MISSING INDEXES — composite or specialised indexes (GIN trigram)
+#      defined in __table_args__ are only created by db.create_all() when
+#      the table is first made. Pre-existing tables need explicit SQL.
+#      Fixed by: CREATE INDEX IF NOT EXISTS + CREATE EXTENSION IF NOT EXISTS
+#
+# Both operations are idempotent — safe to run on every app restart.
+# No data is dropped or modified.
 # ─────────────────────────────────────────────
 
-def _run_column_migrations():
+def _run_migrations():
     """
-    Detect and add any model columns that are missing from the live DB.
+    Apply any schema changes (columns + indexes) that db.create_all() missed.
     Runs once at startup inside the app context, after db.create_all().
     """
     from sqlalchemy import inspect as sa_inspect, text
 
     inspector = sa_inspect(db.engine)
 
-    # Map each SQLAlchemy model to its expected columns.
-    # Add new entries here whenever a column is added to a model.
-    models_to_check = [
-        BusLocation,
-        AuthorizedDriver,
-        BusDetails,
-        Onboard,
-        Driver,
-    ]
+    # ── Part A: add missing columns ──────────────────────────────────
 
-    # PostgreSQL type map: SQLAlchemy type class → SQL type string
+    models_to_check = [BusLocation, AuthorizedDriver, BusDetails, Onboard, Driver]
+
     _type_map = {
         "String":   lambda col: f"VARCHAR({col.type.length or 255})",
         "Text":     lambda col: "TEXT",
@@ -312,28 +359,20 @@ def _run_column_migrations():
     for model in models_to_check:
         table_name = model.__tablename__
 
-        # Skip tables that don't exist yet — db.create_all() will create them
         if not inspector.has_table(table_name):
-            print(f"[migration] table '{table_name}' not found — skipping (create_all handles it)")
+            print(f"[migration] table '{table_name}' not found — db.create_all() will handle it")
             continue
 
-        existing_columns = {
-            col["name"] for col in inspector.get_columns(table_name)
-        }
+        existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
 
         for col in model.__table__.columns:
             if col.name in existing_columns:
-                continue  # column already present — nothing to do
+                continue
 
-            # Determine the SQL type string
-            type_name = type(col.type).__name__
-            sql_type  = _type_map.get(type_name, lambda c: "TEXT")(col)
-
+            type_name      = type(col.type).__name__
+            sql_type       = _type_map.get(type_name, lambda c: "TEXT")(col)
             nullable_clause = "" if col.nullable else " NOT NULL"
-
-            # Build a safe default clause so NOT NULL columns can be added
-            # to tables that may already have rows
-            default_clause = ""
+            default_clause  = ""
             if not col.nullable:
                 if   type_name == "Boolean":  default_clause = " DEFAULT FALSE"
                 elif type_name == "Integer":  default_clause = " DEFAULT 0"
@@ -354,7 +393,67 @@ def _run_column_migrations():
                 db.session.rollback()
                 print(f"[migration] ❌ failed to add '{table_name}.{col.name}': {e}")
 
-    print("[migration] column migration check complete")
+    # ── Part B: create missing indexes ───────────────────────────────
+
+    # Each entry: (index_name, sql_to_create_it)
+    # All use CREATE INDEX IF NOT EXISTS so they are safe to re-run.
+    _indexes = [
+        (
+            "idx_bus_location_route_ts",
+            # Composite index: route lookup + timestamp ordering in one scan.
+            # Covers: BusLocation.query.filter_by(route=x) with ORDER BY timestamp.
+            "CREATE INDEX IF NOT EXISTS idx_bus_location_route_ts "
+            "ON bus_location (route, timestamp)"
+        ),
+        (
+            "idx_bus_details_route_area",
+            # B-tree index on bus_route for equality and ORDER BY.
+            "CREATE INDEX IF NOT EXISTS idx_bus_details_route_area "
+            "ON bus_details (bus_route)"
+        ),
+    ]
+
+    # pg_trgm enables GIN indexes for fast ILIKE '%...%' (partial text search).
+    # Safe to run repeatedly — CREATE EXTENSION IF NOT EXISTS is a no-op when present.
+    _trgm_enabled = False
+    try:
+        db.session.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        db.session.commit()
+        _trgm_enabled = True
+        print("[migration] pg_trgm extension ready")
+    except Exception as e:
+        db.session.rollback()
+        print(f"[migration] pg_trgm not available (non-fatal): {e}")
+
+    if _trgm_enabled:
+        _indexes.append((
+            "idx_bus_details_route_area_trgm",
+            # GIN trigram index: makes ILIKE '%karay%' queries fast.
+            # Used by admin_get_bus_routes() and /search_routes area matching.
+            "CREATE INDEX IF NOT EXISTS idx_bus_details_route_area_trgm "
+            "ON bus_details USING gin (bus_route gin_trgm_ops)"
+        ))
+
+    # Fetch the set of indexes that already exist on these tables
+    existing_indexes = set()
+    for table in ("bus_location", "bus_details", "authorized_driver", "onboard", "driver"):
+        if inspector.has_table(table):
+            for idx in inspector.get_indexes(table):
+                existing_indexes.add(idx["name"])
+
+    for index_name, create_sql in _indexes:
+        if index_name in existing_indexes:
+            print(f"[migration] index '{index_name}' already exists — skipping")
+            continue
+        try:
+            db.session.execute(text(create_sql))
+            db.session.commit()
+            print(f"[migration] ✅ created index '{index_name}'")
+        except Exception as e:
+            db.session.rollback()
+            print(f"[migration] ❌ failed to create index '{index_name}': {e}")
+
+    print("[migration] ── migration check complete ──")
 
 
 # ─────────────────────────────────────────────
@@ -488,11 +587,10 @@ with app.app_context():
     # ── Step 1: create any tables that are completely missing ──
     db.create_all()
 
-    # ── Step 2: add any columns missing from existing tables ──
-    # db.create_all() never alters existing tables, so columns added to
-    # SQLAlchemy models after the initial deployment are silently absent
-    # from the live DB. This migration function closes that gap safely.
-    _run_column_migrations()
+    # ── Step 2: apply schema migrations (missing columns + indexes) ──
+    # db.create_all() never alters existing tables. _run_migrations() adds
+    # any missing columns and creates any missing indexes safely and idempotently.
+    _run_migrations()
 
     # ── Step 3: seed and cache ──
     load_drivers()
@@ -1235,6 +1333,9 @@ def location():
             print(f"[location] INSERTING new row route={route!r}")
 
         db.session.commit()
+        # Invalidate the bus_locations cache so the next student poll
+        # fetches the fresh position from DB rather than stale cached data.
+        _cache_delete(_BUS_LOCATIONS_KEY)
         print(f"[location] COMMITTED — route={route!r} active=True timestamp={now.isoformat()}")
         return jsonify({"status": "ok", "route": route, "timestamp": now.isoformat()})
 
@@ -1246,6 +1347,61 @@ def location():
 
 
 # ─────────────────────────────────────────────
+# REDIS CACHE HELPERS
+# ─────────────────────────────────────────────
+
+import json as _json
+
+# TTL for the bus_locations cache key.
+# Slightly shorter than the student polling interval (5s) so that at most
+# one DB query fires per student poll cycle when many students are watching.
+_BUS_LOCATIONS_TTL  = 4    # seconds
+_BUS_LOCATIONS_KEY  = "bus_locations"
+
+
+def _cache_get(key: str):
+    """
+    Return parsed JSON from Redis, or None on miss / error / Redis absent.
+    Always safe to call — silently returns None if Redis is not configured.
+    """
+    if not redis_client:
+        return None
+    try:
+        raw = redis_client.get(key)
+        return _json.loads(raw) if raw else None
+    except Exception as e:
+        print(f"[redis] GET '{key}' error (non-fatal): {e}")
+        return None
+
+
+def _cache_set(key: str, value, ttl: int):
+    """
+    Serialise value to JSON and store in Redis with TTL.
+    Silent no-op if Redis is not configured or unavailable.
+    """
+    if not redis_client:
+        return
+    try:
+        redis_client.setex(key, ttl, _json.dumps(value))
+    except Exception as e:
+        print(f"[redis] SET '{key}' error (non-fatal): {e}")
+
+
+def _cache_delete(key: str):
+    """
+    Delete a key from Redis. Silent no-op if Redis is absent.
+    Called by write endpoints (/location, /end_trip) to invalidate stale cache.
+    """
+    if not redis_client:
+        return
+    try:
+        redis_client.delete(key)
+        print(f"[redis] invalidated '{key}'")
+    except Exception as e:
+        print(f"[redis] DELETE '{key}' error (non-fatal): {e}")
+
+
+# ─────────────────────────────────────────────
 # GET BUS LOCATIONS
 # ─────────────────────────────────────────────
 
@@ -1254,16 +1410,24 @@ def get_locations():
     """
     READ-ONLY endpoint. Never writes to the database.
 
+    Cache strategy:
+      - Checks Redis for "bus_locations" key first (TTL 4s).
+      - On cache hit: returns immediately — zero DB queries.
+      - On cache miss: queries DB, builds result, stores in Redis.
+      - Cache is invalidated by /location and /end_trip writes.
+
     Activity is determined SOLELY by is_bus_active(bus.timestamp).
     The DB `active` flag is NOT used in the activity calculation here.
-
-    Rationale:
-      - /location updates timestamp on every GPS ping → is_bus_active = True
-      - /end_trip rewinds timestamp past the threshold → is_bus_active = False
-      - Combining the flag AND the timestamp created false negatives when the
-        flag was stale (e.g. app restart, missed end_trip call).
     """
     print("[get_locations] ── endpoint hit ──")
+
+    # ── Cache read ──
+    cached = _cache_get(_BUS_LOCATIONS_KEY)
+    if cached is not None:
+        print(f"[get_locations] cache HIT — returning {len(cached)} record(s)")
+        return jsonify(cached)
+
+    print("[get_locations] cache MISS — querying DB")
 
     try:
         buses  = BusLocation.query.all()
@@ -1273,7 +1437,6 @@ def get_locations():
 
         for bus in buses:
             try:
-                # Timestamp alone determines activity — single source of truth
                 active = is_bus_active(bus.timestamp)
 
                 print(
@@ -1300,7 +1463,10 @@ def get_locations():
                 import traceback; traceback.print_exc()
                 continue
 
-        print(f"[get_locations] returning {len(result)} record(s)")
+        # ── Cache write ──
+        _cache_set(_BUS_LOCATIONS_KEY, result, _BUS_LOCATIONS_TTL)
+
+        print(f"[get_locations] returning {len(result)} record(s) (stored in cache)")
         return jsonify(result)
 
     except Exception as e:
@@ -1333,6 +1499,8 @@ def end_trip():
         bus.lat       = None
         bus.lng       = None
         db.session.commit()
+        # Invalidate cache so students immediately see the bus as inactive
+        _cache_delete(_BUS_LOCATIONS_KEY)
         print(
             f"[end_trip] route={route!r} — timestamp rewound, active=False, "
             f"lat/lng cleared"
