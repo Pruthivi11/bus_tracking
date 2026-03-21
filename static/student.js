@@ -75,12 +75,19 @@ rem500m?.addEventListener("change", () => { reminders.m500 = rem500m.checked; })
 
 // ─────────────────────────────────────────────
 // STATUS BAR
-// setStatus is overridden in student.html to use the styled bar.
-// This default is a safe fallback.
+//
+// Always calls window.setStatus so the post-load override in
+// student.html (which wires up the styled status bar) takes effect.
+// The local definition here is a safe no-op fallback for any call
+// that fires before the override is installed.
 // ─────────────────────────────────────────────
-function setStatus(text) {
+window.setStatus = window.setStatus || function setStatus(text) {
   const el = document.getElementById("statusMsg");
   if (el) el.textContent = text;
+};
+
+function setStatus(text) {
+  window.setStatus(text);
 }
 
 
@@ -226,18 +233,13 @@ function checkDestinationReminder(bus) {
 // ─────────────────────────────────────────────
 // FETCH BUS LOCATIONS
 //
-// Uses BASE_URL so it works on Render cross-origin deployments.
-// Distinguishes three failure modes with specific log messages:
-//   1. Network failure  — fetch() rejects (no connection / CORS block)
-//   2. HTTP error       — server responded with non-2xx status
-//   3. Parse error      — server returned non-JSON (usually a 500 HTML page)
-//
-// Route number comparison is normalised (.trim()) on both sides
-// so "12 " and "12" are treated as the same bus.
+// Route number is normalised to UPPERCASE before comparison,
+// matching backend _normalize_route() and driver-side .toUpperCase().
+// Logs the full API response to the console for easy debugging.
 // ─────────────────────────────────────────────
 async function loadBusLocations(studentLat, studentLng) {
-  // Normalise bus number the same way the backend normalises route
-  const busNo = busNoEl.value.trim();
+  // Normalise exactly as backend does: strip + uppercase
+  const busNo = busNoEl.value.trim().toUpperCase();
   const url   = `${BASE_URL}/get_locations`;
 
   let response;
@@ -250,7 +252,7 @@ async function loadBusLocations(studentLat, studentLng) {
       headers: { "Accept": "application/json" }
     });
   } catch (networkErr) {
-    console.error("[loadBusLocations] Network error fetching", url, "→", networkErr);
+    console.error("[loadBusLocations] Network error →", networkErr);
     setStatus("⚠️ Cannot reach server — check your connection");
     return;
   }
@@ -266,49 +268,50 @@ async function loadBusLocations(studentLat, studentLng) {
   try {
     data = await response.json();
   } catch (parseErr) {
-    console.error("[loadBusLocations] Response is not valid JSON from", url, "→", parseErr);
+    console.error("[loadBusLocations] Not valid JSON from", url, "→", parseErr);
     setStatus("⚠️ Unexpected server response — please try again");
     return;
   }
 
-  // ── Step 4: validate shape ──
+  // ── Step 4: Log full response (visible in browser DevTools console) ──
+  console.log(`[loadBusLocations] full API response (${data.length} record(s)):`, data);
+
   if (!Array.isArray(data)) {
-    console.warn("[loadBusLocations] Unexpected data shape:", data);
+    console.warn("[loadBusLocations] unexpected shape:", data);
     setStatus("⚠️ Unexpected data from server");
     return;
   }
 
-  // ── Step 5: find matching bus (normalised comparison) ──
-  // Both sides trimmed so whitespace differences don't cause mismatches.
-  const matchingBus = data.find(b => String(b.route).trim() === busNo);
+  // ── Step 5: find matching bus ──
+  // Both sides normalised: backend stores UPPERCASE, we compare UPPERCASE
+  const matchingBus = data.find(b => String(b.route).trim().toUpperCase() === busNo);
 
   console.log(
-    `[loadBusLocations] looking for bus="${busNo}" in ${data.length} record(s).`,
-    matchingBus
-      ? `Found: active=${matchingBus.active} lastSeen=${matchingBus.lastSeen}s`
-      : "Not found in response."
+    `[loadBusLocations] looking for bus="${busNo}" — ` +
+    (matchingBus
+      ? `found → active=${matchingBus.active} lastSeen=${matchingBus.lastSeen}s timestamp=${matchingBus.timestamp}`
+      : `NOT FOUND in response (routes present: [${data.map(b => b.route).join(", ")}])`)
   );
 
   // ── Step 6: handle result ──
   if (!matchingBus) {
-    // Bus number not in the DB at all yet — driver hasn't started a trip
-    if (!isOnboard) setStatus(`🔴 Bus ${busNo} has not started a trip`);
+    if (!isOnboard) setStatus(`🔴 Bus ${busNo} — no trip started yet`);
     return;
   }
 
   if (!matchingBus.active) {
-    // Bus is known but inactive (driver ended trip or GPS timed out)
     if (busMarkers[matchingBus.route]) {
       busMarkers[matchingBus.route].remove();
       delete busMarkers[matchingBus.route];
     }
     if (!isOnboard) {
-      setStatus(`🔴 Bus ${busNo} is not active (last seen ${matchingBus.lastSeen}s ago)`);
+      const ago = matchingBus.lastSeen != null ? ` (last seen ${matchingBus.lastSeen}s ago)` : "";
+      setStatus(`🔴 Bus ${busNo} is not active${ago}`);
     }
     return;
   }
 
-  // Bus is active — place or animate the marker
+  // ── Bus is active ──
   if (!busMarkers[matchingBus.route]) {
     busMarkers[matchingBus.route] = createBusMarker(
       matchingBus.route, matchingBus.lat, matchingBus.lng
@@ -395,5 +398,5 @@ showBtn.addEventListener("click", () => {
       // Still poll even without a student marker (e.g. GPS denied)
       loadBusLocations(null, null);
     }
-  }, 1000);
+  }, 5000);
 });

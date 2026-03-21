@@ -7,12 +7,20 @@
  *   #routeNo   — Bus number (e.g. "12")  → looked up in bus_details.xlsx via /get-route
  *   #routeArea — Route area (e.g. "Velachery") → auto-filled, driver can override
  *
- * The value sent to /location as `route` remains the routeNo (bus number),
- * keeping full backward compatibility with student tracking and admin dashboard.
+ * The value sent to /location as `route` is routeNo normalised to UPPERCASE,
+ * keeping it consistent with student-side comparison and backend storage.
  * The routeArea is sent as the additional `busRoute` field.
  */
 
 'use strict';
+
+// ─────────────────────────────────────────────
+// BASE URL
+// Injected by Flask into driver.html as window.BASE_URL before this
+// script loads. Ensures all fetch() calls reach the correct backend
+// on Render cross-origin deployments. Never hardcode localhost.
+// ─────────────────────────────────────────────
+const BASE_URL = (typeof window.BASE_URL === 'string' ? window.BASE_URL : '').replace(/\/$/, '');
 
 let watchId   = null;
 let tripActive = false;
@@ -87,7 +95,7 @@ routeAreaInput.addEventListener("input", () => {
  * Auto-fills #routeArea if driver has NOT manually modified it.
  */
 async function fetchRouteRecommendation() {
-  const busNo = routeNoInput.value.trim();
+  const busNo = routeNoInput.value.trim().toUpperCase();
 
   // Clear badges on empty input
   if (!busNo) {
@@ -103,7 +111,7 @@ async function fetchRouteRecommendation() {
   routeNoMatch.classList.remove("visible");
 
   try {
-    const res  = await fetch(`/get-route?bus_no=${encodeURIComponent(busNo)}`);
+    const res  = await fetch(`${BASE_URL}/get-route?bus_no=${encodeURIComponent(busNo)}`);
     const data = await res.json();
 
     routeLoadingIcon.classList.remove("visible");
@@ -130,7 +138,7 @@ async function fetchRouteRecommendation() {
     }
 
   } catch (err) {
-    console.log("Route fetch error:", err);
+    console.error("[fetchRouteRecommendation] error:", err);
     routeLoadingIcon.classList.remove("visible");
     // Fail silently — driver can still type the area manually
   }
@@ -155,7 +163,8 @@ routeSuggestion.addEventListener("click", () => {
 // ─────────────────────────────────────────────
 
 function startTrip() {
-  const routeNo   = routeNoInput.value.trim();
+  // Normalise to UPPERCASE — must match backend _normalize_route() and student comparison
+  const routeNo   = routeNoInput.value.trim().toUpperCase();
   const routeArea = routeAreaInput.value.trim();
   const busType   = document.getElementById("busType").value;
 
@@ -168,41 +177,60 @@ function startTrip() {
     return;
   }
 
+  // Reflect normalised value back in the input so driver sees what was stored
+  routeNoInput.value = routeNo;
+
   tripActive = true;
   setStatus("TRIP STARTED", "#09f443");
   startBtn.disabled = true;
   endBtn.disabled   = false;
 
+  console.log(`[startTrip] route=${routeNo} area=${routeArea} type=${busType}`);
+
   watchId = navigator.geolocation.watchPosition(
     pos => {
       if (!tripActive) return;
 
-      fetch("/location", {
+      const payload = {
+        route:    routeNo,
+        busRoute: routeArea,
+        busType:  busType,
+        lat:      pos.coords.latitude,
+        lng:      pos.coords.longitude
+      };
+
+      console.log("[location] sending:", payload);
+
+      fetch(`${BASE_URL}/location`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          route:    routeNo,       // bus number — used for tracking identity
-          busRoute: routeArea,     // route area — display/info field
-          busType:  busType,
-          lat:      pos.coords.latitude,
-          lng:      pos.coords.longitude
-        })
-      }).catch(err => console.log("Location send error:", err));
+        body:    JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          console.error("[location] server error:", data.error);
+        } else {
+          console.log("[location] saved OK — route:", data.route, "ts:", data.timestamp);
+        }
+      })
+      .catch(err => console.error("[location] fetch failed:", err));
     },
     err => {
-      console.log("GPS error:", err);
+      console.error("[GPS] error:", err);
       alert("Enable GPS for tracking");
     },
     {
       enableHighAccuracy: true,
       maximumAge:         0,
-      timeout:            5000
+      timeout:            10000
     }
   );
 }
 
 function endTrip() {
-  const routeNo = routeNoInput.value.trim();
+  // Normalise consistently with startTrip and backend
+  const routeNo = routeNoInput.value.trim().toUpperCase();
 
   tripActive = false;
   setStatus("TRIP ENDED", "#dc3545");
@@ -214,11 +242,16 @@ function endTrip() {
     watchId = null;
   }
 
-  fetch("/end_trip", {
+  console.log(`[endTrip] route=${routeNo}`);
+
+  fetch(`${BASE_URL}/end_trip`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ route: routeNo })
-  }).catch(err => console.log("End trip error:", err));
+  })
+  .then(res => res.json())
+  .then(data => console.log("[endTrip] response:", data))
+  .catch(err => console.error("[endTrip] fetch failed:", err));
 }
 
 function logout() {

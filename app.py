@@ -215,6 +215,54 @@ def _validate_phone(raw):
     return p, None
 
 
+def _normalize_route(raw) -> str:
+    """
+    Normalise a bus/route number to a canonical form used everywhere:
+    strip whitespace, convert to UPPERCASE.
+
+    Applied identically in:
+      - /location          (driver write)
+      - /end_trip          (driver write)
+      - /get_locations     (read + comparison)
+      - /get-route         (bus details lookup)
+      - student.js         (frontend comparison, same logic mirrored in JS)
+
+    This prevents "12a" vs "12A", "Route 5" vs "route 5",
+    or trailing-space mismatches from breaking the active check.
+    """
+    return str(raw).strip().upper()
+
+
+def is_bus_active(last_updated) -> bool:
+    """
+    Single source of truth for bus activity.
+
+    A bus is ACTIVE if it sent a location update within the last
+    INACTIVITY_THRESHOLD_SECONDS seconds (default: 300 / 5 minutes).
+
+    Uses timezone-naive UTC comparison throughout.
+    Postgres may store timestamps with or without timezone info;
+    we strip tzinfo from the stored value before comparing to
+    prevent TypeError: can't compare offset-naive and offset-aware datetimes.
+    """
+    if not last_updated:
+        print("[is_bus_active] last_updated is None → inactive")
+        return False
+
+    # Strip timezone info if present (Render Postgres returns tz-aware datetimes)
+    if hasattr(last_updated, "tzinfo") and last_updated.tzinfo is not None:
+        last_updated = last_updated.replace(tzinfo=None)
+
+    age_seconds = (datetime.utcnow() - last_updated).total_seconds()
+    active       = age_seconds < INACTIVITY_THRESHOLD_SECONDS
+
+    print(
+        f"[is_bus_active] last_updated={last_updated.isoformat()} "
+        f"age={age_seconds:.1f}s threshold={INACTIVITY_THRESHOLD_SECONDS}s → {active}"
+    )
+    return active
+
+
 # ─────────────────────────────────────────────
 # BUS DETAILS — SEED + CACHE HELPERS
 # ─────────────────────────────────────────────
@@ -882,7 +930,9 @@ def driver_page():
         session.clear()
         return redirect("/driver_login")
 
-    return render_template("driver.html")
+    # Pass backend_url so driver.js can build absolute fetch URLs,
+    # matching the same pattern used in student.html.
+    return render_template("driver.html", backend_url=BACKEND_URL)
 
 
 @app.route("/logout")
@@ -941,16 +991,21 @@ def location():
         required = ("route", "busType", "lat", "lng")
 
         if not all(k in data for k in required):
+            print(f"[location] REJECTED — missing fields. Got keys: {list(data.keys())}")
             return jsonify({"error": "Invalid data"}), 400
 
-        # Normalise route number: strip whitespace, consistent string
-        route     = str(data["route"]).strip()
+        # Normalise route: strip + uppercase (consistent with student-side comparison)
+        route     = _normalize_route(data["route"])
         bus_route = str(data.get("busRoute", "")).strip()
         bus_type  = str(data.get("busType",  "")).strip()
         lat       = data["lat"]
         lng       = data["lng"]
+        now       = datetime.utcnow()
 
-        print(f"[location] driver update → route={route!r} type={bus_type!r} lat={lat} lng={lng}")
+        print(
+            f"[location] RECEIVED — route={route!r} type={bus_type!r} "
+            f"lat={lat} lng={lng} utcnow={now.isoformat()}"
+        )
 
         bus = BusLocation.query.filter_by(route=route).first()
 
@@ -959,23 +1014,27 @@ def location():
             bus.lng       = lng
             bus.bus_type  = bus_type
             bus.bus_route = bus_route
-            bus.timestamp = datetime.utcnow()
+            bus.timestamp = now
             bus.active    = True
+            print(f"[location] UPDATING existing row id={bus.id} route={route!r}")
         else:
             bus = BusLocation(
                 route=route, bus_type=bus_type,
                 bus_route=bus_route,
                 lat=lat, lng=lng,
-                timestamp=datetime.utcnow(), active=True
+                timestamp=now,
+                active=True
             )
             db.session.add(bus)
+            print(f"[location] INSERTING new row route={route!r}")
 
         db.session.commit()
-        print(f"[location] saved → route={route!r} active=True")
-        return jsonify({"status": "ok"})
+        print(f"[location] COMMITTED — route={route!r} active=True timestamp={now.isoformat()}")
+        return jsonify({"status": "ok", "route": route, "timestamp": now.isoformat()})
 
     except Exception as e:
         print(f"[location] ERROR: {e}")
+        import traceback; traceback.print_exc()
         db.session.rollback()
         return jsonify({"error": "location failed"}), 500
 
@@ -987,66 +1046,59 @@ def location():
 @app.route("/get_locations")
 def get_locations():
     """
-    Returns all bus locations as a JSON array.
+    READ-ONLY endpoint. Never writes to the database.
 
-    IMPORTANT: this is a READ-ONLY endpoint.
-    It NEVER writes to the database. The `active` field in each response
-    object is computed on the fly from `timestamp` and returned to the
-    client — it is NOT persisted back to the DB here.
+    Active status is computed by is_bus_active(bus.timestamp) which:
+      - Uses a single 5-minute threshold (INACTIVITY_THRESHOLD_SECONDS)
+      - Strips timezone info before comparison (Render Postgres fix)
+      - Logs every bus with its exact timestamp and computed result
 
-    Active DB flag is only written by:
-      - POST /location  (driver GPS ping)  → sets active=True
-      - POST /end_trip  (driver ends trip) → sets active=False
-
-    This prevents a student poll from overwriting the driver's active state.
+    The DB `active` flag is the authoritative write-side state set by
+    /location (True) and /end_trip (False). We AND it with the time check
+    so a bus that lost GPS but never called /end_trip still goes inactive.
     """
-    print("[get_locations] endpoint hit")
+    print("[get_locations] ── endpoint hit ──")
 
     try:
         buses  = BusLocation.query.all()
         result = []
-        now    = datetime.utcnow()
+
+        print(f"[get_locations] {len(buses)} row(s) in bus_location table")
 
         for bus in buses:
             try:
-                # Compute seconds since last driver update
-                if bus.timestamp is None:
-                    last_seen = INACTIVITY_THRESHOLD_SECONDS + 1
-                else:
-                    last_seen = int((now - bus.timestamp).total_seconds())
-
-                # Active = driver sent a location update recently enough
-                # Use the stored DB flag AND the time check.
-                # If the DB says active=True but timestamp is stale,
-                # the driver likely lost connection — treat as inactive.
-                is_active = bool(bus.active) and (last_seen <= INACTIVITY_THRESHOLD_SECONDS)
+                active = is_bus_active(bus.timestamp) and bool(bus.active)
 
                 print(
                     f"[get_locations] route={bus.route!r} "
-                    f"db_active={bus.active} last_seen={last_seen}s "
-                    f"threshold={INACTIVITY_THRESHOLD_SECONDS}s → active={is_active}"
+                    f"db_active={bus.active} "
+                    f"timestamp={bus.timestamp!r} "
+                    f"computed_active={active}"
                 )
 
                 result.append({
-                    "route":    bus.route,
-                    "busType":  bus.bus_type  or "",
-                    "busRoute": bus.bus_route or "",
-                    "lat":      bus.lat,
-                    "lng":      bus.lng,
-                    "lastSeen": last_seen,
-                    "active":   is_active      # computed — NOT written back to DB
+                    "route":     bus.route,            # already normalised (stored upper)
+                    "busType":   bus.bus_type  or "",
+                    "busRoute":  bus.bus_route or "",
+                    "lat":       bus.lat,
+                    "lng":       bus.lng,
+                    "lastSeen":  int((datetime.utcnow() - bus.timestamp).total_seconds())
+                                 if bus.timestamp else None,
+                    "active":    active,               # computed — NOT written to DB
+                    "timestamp": bus.timestamp.isoformat() if bus.timestamp else None,
                 })
 
             except Exception as row_err:
-                print(f"[get_locations] skipping bus row id={bus.id}: {row_err}")
+                print(f"[get_locations] ERROR on row id={bus.id}: {row_err}")
+                import traceback; traceback.print_exc()
                 continue
 
-        # NO db.session.commit() here — this endpoint is purely read-only
-        print(f"[get_locations] returning {len(result)} bus record(s)")
+        print(f"[get_locations] returning {len(result)} record(s)")
         return jsonify(result)
 
     except Exception as e:
-        print(f"[get_locations] ERROR: {e}")
+        print(f"[get_locations] FATAL ERROR: {e}")
+        import traceback; traceback.print_exc()
         return jsonify([]), 200
 
 
@@ -1057,7 +1109,7 @@ def get_locations():
 @app.route("/end_trip", methods=["POST"])
 def end_trip():
     data  = request.get_json(silent=True) or {}
-    route = str(data.get("route", "")).strip()
+    route = _normalize_route(data.get("route", ""))
 
     print(f"[end_trip] route={route!r}")
 

@@ -165,6 +165,17 @@
 
   <footer>&copy; 2026 Commute Assistant</footer>
 
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+  <!--
+    BASE_URL is set by Flask from the BACKEND_URL env var (same as student.html).
+    Must appear before driver.js so BASE_URL is defined when that script runs.
+    Empty string = same-origin. Set BACKEND_URL env var for cross-origin deployments.
+  -->
+  <script>
+    window.BASE_URL = "{{ backend_url | default('') }}";
+  </script>
+
   <script src="/static/driver.js"></script>
 
   <!-- Override setStatus to drive the styled status banner -->
