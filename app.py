@@ -75,6 +75,22 @@ EXCEL_PATH       = "drivers.xlsx"
 BUS_DETAILS_PATH = "bus_details.xlsx"   # seed source only — runtime data lives in DB
 
 # ─────────────────────────────────────────────
+# BUS INACTIVITY THRESHOLD
+#
+# A bus is considered inactive when its last location update
+# is older than this many seconds.
+#
+# 300s (5 min) is generous enough to survive Render network
+# latency, GPS poll gaps, and brief connectivity drops.
+# The /location endpoint sets active=True and updates the timestamp
+# on every driver GPS ping — this threshold only governs read logic.
+# ─────────────────────────────────────────────
+
+INACTIVITY_THRESHOLD_SECONDS = int(
+    os.environ.get("INACTIVITY_THRESHOLD_SECONDS", "300")
+)
+
+# ─────────────────────────────────────────────
 # BACKEND URL
 #
 # Used by frontend JS to construct absolute API calls.
@@ -927,31 +943,40 @@ def location():
         if not all(k in data for k in required):
             return jsonify({"error": "Invalid data"}), 400
 
-        route     = data["route"]
-        bus_route = data.get("busRoute", "")   # optional route area from driver
-        bus       = BusLocation.query.filter_by(route=route).first()
+        # Normalise route number: strip whitespace, consistent string
+        route     = str(data["route"]).strip()
+        bus_route = str(data.get("busRoute", "")).strip()
+        bus_type  = str(data.get("busType",  "")).strip()
+        lat       = data["lat"]
+        lng       = data["lng"]
+
+        print(f"[location] driver update → route={route!r} type={bus_type!r} lat={lat} lng={lng}")
+
+        bus = BusLocation.query.filter_by(route=route).first()
 
         if bus:
-            bus.lat       = data["lat"]
-            bus.lng       = data["lng"]
-            bus.bus_type  = data["busType"]
+            bus.lat       = lat
+            bus.lng       = lng
+            bus.bus_type  = bus_type
             bus.bus_route = bus_route
             bus.timestamp = datetime.utcnow()
             bus.active    = True
         else:
             bus = BusLocation(
-                route=route, bus_type=data["busType"],
+                route=route, bus_type=bus_type,
                 bus_route=bus_route,
-                lat=data["lat"], lng=data["lng"],
+                lat=lat, lng=lng,
                 timestamp=datetime.utcnow(), active=True
             )
             db.session.add(bus)
 
         db.session.commit()
+        print(f"[location] saved → route={route!r} active=True")
         return jsonify({"status": "ok"})
 
     except Exception as e:
-        print("LOCATION ERROR:", e)
+        print(f"[location] ERROR: {e}")
+        db.session.rollback()
         return jsonify({"error": "location failed"}), 500
 
 
@@ -962,30 +987,45 @@ def location():
 @app.route("/get_locations")
 def get_locations():
     """
-    Returns all bus locations as JSON.
-    Always returns a valid JSON array — never crashes on bad data.
-    Logs every request to confirm it reaches the backend.
+    Returns all bus locations as a JSON array.
+
+    IMPORTANT: this is a READ-ONLY endpoint.
+    It NEVER writes to the database. The `active` field in each response
+    object is computed on the fly from `timestamp` and returned to the
+    client — it is NOT persisted back to the DB here.
+
+    Active DB flag is only written by:
+      - POST /location  (driver GPS ping)  → sets active=True
+      - POST /end_trip  (driver ends trip) → sets active=False
+
+    This prevents a student poll from overwriting the driver's active state.
     """
     print("[get_locations] endpoint hit")
 
     try:
         buses  = BusLocation.query.all()
         result = []
+        now    = datetime.utcnow()
 
         for bus in buses:
             try:
-                # Guard against None timestamp (can happen after manual DB edits)
+                # Compute seconds since last driver update
                 if bus.timestamp is None:
-                    last_seen = 9999
+                    last_seen = INACTIVITY_THRESHOLD_SECONDS + 1
                 else:
-                    diff      = datetime.utcnow() - bus.timestamp
-                    last_seen = int(diff.total_seconds())
+                    last_seen = int((now - bus.timestamp).total_seconds())
 
-                if last_seen > 60:
-                    if bus.active:
-                        bus.active = False
-                else:
-                    bus.active = True
+                # Active = driver sent a location update recently enough
+                # Use the stored DB flag AND the time check.
+                # If the DB says active=True but timestamp is stale,
+                # the driver likely lost connection — treat as inactive.
+                is_active = bool(bus.active) and (last_seen <= INACTIVITY_THRESHOLD_SECONDS)
+
+                print(
+                    f"[get_locations] route={bus.route!r} "
+                    f"db_active={bus.active} last_seen={last_seen}s "
+                    f"threshold={INACTIVITY_THRESHOLD_SECONDS}s → active={is_active}"
+                )
 
                 result.append({
                     "route":    bus.route,
@@ -994,27 +1034,19 @@ def get_locations():
                     "lat":      bus.lat,
                     "lng":      bus.lng,
                     "lastSeen": last_seen,
-                    "active":   bus.active
+                    "active":   is_active      # computed — NOT written back to DB
                 })
+
             except Exception as row_err:
-                # Skip one bad row rather than failing the whole response
-                print(f"[get_locations] skipping bus row {bus.id}: {row_err}")
+                print(f"[get_locations] skipping bus row id={bus.id}: {row_err}")
                 continue
 
-        # Commit only if we actually changed any active flags
-        try:
-            db.session.commit()
-        except Exception as commit_err:
-            print(f"[get_locations] commit error (non-fatal): {commit_err}")
-            db.session.rollback()
-
-        print(f"[get_locations] returning {len(result)} bus(es)")
+        # NO db.session.commit() here — this endpoint is purely read-only
+        print(f"[get_locations] returning {len(result)} bus record(s)")
         return jsonify(result)
 
     except Exception as e:
         print(f"[get_locations] ERROR: {e}")
-        db.session.rollback()
-        # Always return valid JSON so the frontend can handle it gracefully
         return jsonify([]), 200
 
 
@@ -1025,15 +1057,23 @@ def get_locations():
 @app.route("/end_trip", methods=["POST"])
 def end_trip():
     data  = request.get_json(silent=True) or {}
-    route = data.get("route")
+    route = str(data.get("route", "")).strip()
+
+    print(f"[end_trip] route={route!r}")
+
+    if not route:
+        return jsonify({"error": "route is required"}), 400
 
     bus = BusLocation.query.filter_by(route=route).first()
     if bus:
         bus.active = False
         bus.lat    = None
         bus.lng    = None
+        db.session.commit()
+        print(f"[end_trip] route={route!r} marked inactive, lat/lng cleared")
+    else:
+        print(f"[end_trip] route={route!r} not found in DB — nothing to update")
 
-    db.session.commit()
     return jsonify({"status": "trip ended"})
 
 

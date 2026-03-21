@@ -224,15 +224,19 @@ function checkDestinationReminder(bus) {
 
 
 // ─────────────────────────────────────────────
-// FETCH BUS LOCATIONS  ← main fix
+// FETCH BUS LOCATIONS
 //
 // Uses BASE_URL so it works on Render cross-origin deployments.
 // Distinguishes three failure modes with specific log messages:
 //   1. Network failure  — fetch() rejects (no connection / CORS block)
 //   2. HTTP error       — server responded with non-2xx status
 //   3. Parse error      — server returned non-JSON (usually a 500 HTML page)
+//
+// Route number comparison is normalised (.trim()) on both sides
+// so "12 " and "12" are treated as the same bus.
 // ─────────────────────────────────────────────
 async function loadBusLocations(studentLat, studentLng) {
+  // Normalise bus number the same way the backend normalises route
   const busNo = busNoEl.value.trim();
   const url   = `${BASE_URL}/get_locations`;
 
@@ -246,7 +250,6 @@ async function loadBusLocations(studentLat, studentLng) {
       headers: { "Accept": "application/json" }
     });
   } catch (networkErr) {
-    // Network failure: no connection, DNS error, CORS preflight rejected, etc.
     console.error("[loadBusLocations] Network error fetching", url, "→", networkErr);
     setStatus("⚠️ Cannot reach server — check your connection");
     return;
@@ -263,79 +266,90 @@ async function loadBusLocations(studentLat, studentLng) {
   try {
     data = await response.json();
   } catch (parseErr) {
-    // Server returned non-JSON (HTML error page, proxy timeout page, etc.)
     console.error("[loadBusLocations] Response is not valid JSON from", url, "→", parseErr);
     setStatus("⚠️ Unexpected server response — please try again");
     return;
   }
 
-  // ── Step 4: process bus data ──
+  // ── Step 4: validate shape ──
   if (!Array.isArray(data)) {
     console.warn("[loadBusLocations] Unexpected data shape:", data);
     setStatus("⚠️ Unexpected data from server");
     return;
   }
 
-  // If no buses at all, show a neutral status
-  const matchingBus = data.find(b => String(b.route) === String(busNo));
-  if (!matchingBus && !isOnboard) {
-    setStatus(`🔴 Bus ${busNo} is not active`);
+  // ── Step 5: find matching bus (normalised comparison) ──
+  // Both sides trimmed so whitespace differences don't cause mismatches.
+  const matchingBus = data.find(b => String(b.route).trim() === busNo);
+
+  console.log(
+    `[loadBusLocations] looking for bus="${busNo}" in ${data.length} record(s).`,
+    matchingBus
+      ? `Found: active=${matchingBus.active} lastSeen=${matchingBus.lastSeen}s`
+      : "Not found in response."
+  );
+
+  // ── Step 6: handle result ──
+  if (!matchingBus) {
+    // Bus number not in the DB at all yet — driver hasn't started a trip
+    if (!isOnboard) setStatus(`🔴 Bus ${busNo} has not started a trip`);
+    return;
   }
 
-  data.forEach(bus => {
-    if (String(bus.route) !== String(busNo)) return;
+  if (!matchingBus.active) {
+    // Bus is known but inactive (driver ended trip or GPS timed out)
+    if (busMarkers[matchingBus.route]) {
+      busMarkers[matchingBus.route].remove();
+      delete busMarkers[matchingBus.route];
+    }
+    if (!isOnboard) {
+      setStatus(`🔴 Bus ${busNo} is not active (last seen ${matchingBus.lastSeen}s ago)`);
+    }
+    return;
+  }
 
-    if (!bus.active) {
-      if (busMarkers[bus.route]) {
-        busMarkers[bus.route].remove();
-        delete busMarkers[bus.route];
+  // Bus is active — place or animate the marker
+  if (!busMarkers[matchingBus.route]) {
+    busMarkers[matchingBus.route] = createBusMarker(
+      matchingBus.route, matchingBus.lat, matchingBus.lng
+    );
+  } else {
+    animateMarker(matchingBus.route, matchingBus.lat, matchingBus.lng);
+  }
+
+  if (!isOnboard) updateBusStatus(matchingBus, busNo);
+
+  if (tripMode === "evening") checkDestinationReminder(matchingBus);
+
+  // ── Onboard detection (morning mode) ──
+  if (
+    typeof studentLat === "number" &&
+    typeof studentLng === "number" &&
+    !isOnboard &&
+    tripMode === "morning"
+  ) {
+    const dist = getDistance(studentLat, studentLng, matchingBus.lat, matchingBus.lng);
+
+    if (dist <= 20) {
+      fetch(`${BASE_URL}/onboard`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rollNo:   rollNoEl.value,
+          busRoute: busNo,
+          onboard:  true
+        })
+      }).catch(err => console.error("[onboard] POST failed:", err));
+
+      if (studentMarker) {
+        studentMarker.remove();
+        studentMarker = null;
       }
-      if (!isOnboard) setStatus(`🔴 Bus ${busNo} is not active`);
-      return;
+
+      isOnboard = true;
+      setStatus(`🟢 ONBOARD Bus ${busNo} (${matchingBus.busType})`);
     }
-
-    // Place or animate marker
-    if (!busMarkers[bus.route]) {
-      busMarkers[bus.route] = createBusMarker(bus.route, bus.lat, bus.lng);
-    } else {
-      animateMarker(bus.route, bus.lat, bus.lng);
-    }
-
-    if (!isOnboard) updateBusStatus(bus, busNo);
-
-    if (tripMode === "evening") checkDestinationReminder(bus);
-
-    // Onboard detection (morning mode only)
-    if (
-      typeof studentLat === "number" &&
-      typeof studentLng === "number" &&
-      !isOnboard &&
-      tripMode === "morning"
-    ) {
-      const dist = getDistance(studentLat, studentLng, bus.lat, bus.lng);
-
-      if (dist <= 20) {
-        // POST to /onboard — now a real endpoint
-        fetch(`${BASE_URL}/onboard`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rollNo:   rollNoEl.value,
-            busRoute: busNo,
-            onboard:  true
-          })
-        }).catch(err => console.error("[onboard] POST failed:", err));
-
-        if (studentMarker) {
-          studentMarker.remove();
-          studentMarker = null;
-        }
-
-        isOnboard = true;
-        setStatus(`🟢 ONBOARD Bus ${busNo} (${bus.busType})`);
-      }
-    }
-  });
+  }
 }
 
 
@@ -381,5 +395,5 @@ showBtn.addEventListener("click", () => {
       // Still poll even without a student marker (e.g. GPS denied)
       loadBusLocations(null, null);
     }
-  }, 5000);
+  }, 1000);
 });
