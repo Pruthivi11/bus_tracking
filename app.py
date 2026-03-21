@@ -866,6 +866,85 @@ def routes_autocomplete():
     return jsonify(matches)
 
 
+@app.route("/search_routes")
+def search_routes():
+    """
+    GET /search_routes?q=<input>
+
+    Unified route search for the student dashboard.
+    Matches against BOTH route_no and route_area (bidirectional).
+
+    Matching rules:
+      - route_no   startsWith(q)   (e.g. "2" → matches "22", "2A")
+      - route_area contains(q)     (e.g. "vel" → matches "Velachery")
+
+    Priority order in results:
+      1. Currently ACTIVE buses  (driver is live right now)
+      2. All other known routes  (from BUS_ROUTE_CACHE / bus_details)
+
+    Response: [
+      { "route_no": "22", "route_area": "Karayanchavadi", "is_active": true },
+      { "route_no": "5",  "route_area": "Tambaram",       "is_active": false }
+    ]
+    Max 10 results.
+    """
+    q = str(request.args.get("q", "")).strip().lower()
+
+    # ── Build full dataset: merge cache with any active bus data ──
+    # BUS_ROUTE_CACHE: { route_no → route_area }
+    # Start with all known routes from cache
+    all_routes = {
+        str(rno).upper(): str(area)
+        for rno, area in BUS_ROUTE_CACHE.items()
+    }
+
+    # Overlay live bus data from DB so active buses reflect any runtime changes
+    try:
+        live_buses = BusLocation.query.all()
+        active_route_nos = set()
+        for bus in live_buses:
+            rno = str(bus.route).upper()
+            # Include route area from live data if it exists
+            if bus.bus_route:
+                all_routes[rno] = bus.bus_route
+            elif rno not in all_routes:
+                all_routes[rno] = ""
+            if is_bus_active(bus.timestamp) and bool(bus.active):
+                active_route_nos.add(rno)
+    except Exception as e:
+        print(f"[search_routes] live bus query error (non-fatal): {e}")
+        active_route_nos = set()
+
+    # ── Filter by query ──
+    results = []
+    for route_no, route_area in all_routes.items():
+        if not q:
+            # Empty query → return all (up to limit)
+            results.append((route_no, route_area))
+        else:
+            matches_no   = route_no.lower().startswith(q)
+            matches_area = q in route_area.lower()
+            if matches_no or matches_area:
+                results.append((route_no, route_area))
+
+    # ── Sort: active buses first, then alphabetically by route_no ──
+    def sort_key(item):
+        rno, _ = item
+        return (0 if rno in active_route_nos else 1, rno)
+
+    results.sort(key=sort_key)
+    results = results[:10]
+
+    return jsonify([
+        {
+            "route_no":   rno,
+            "route_area": area,
+            "is_active":  rno in active_route_nos
+        }
+        for rno, area in results
+    ])
+
+
 # ─────────────────────────────────────────────
 # ADMIN — BUS DETAILS MANAGEMENT
 # ─────────────────────────────────────────────

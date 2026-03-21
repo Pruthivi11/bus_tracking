@@ -2411,3 +2411,213 @@ body.page-admin main {
   color: var(--gray-400);
   text-align: center;
 }
+
+
+/* ============================================================
+   19. STUDENT SMART SEARCH  (unified route search bar)
+   ============================================================ */
+
+/* ── Search field wrapper — position:relative anchors the dropdown ── */
+.student-search-wrap {
+  position: relative;
+  margin-bottom: 0;
+}
+
+/* ── Search input — inherits .form-input base styles ── */
+.student-search-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px 12px 42px;
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--gray-800);
+  outline: none;
+  transition: var(--transition);
+  /* iOS font size ≥16px prevents auto-zoom on focus */
+  font-size: max(16px, 1em);
+  touch-action: manipulation;
+}
+
+.student-search-input:focus {
+  border-color: var(--blue);
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(10,108,220,0.08);
+}
+
+.student-search-input::placeholder { color: var(--gray-400); }
+
+/* ── Magnifier icon inside search input ── */
+.student-search-icon {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gray-400);
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Clear button inside search input (shown when field has content) ── */
+.student-search-clear {
+  display: none;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--gray-200);
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--gray-600);
+  touch-action: manipulation;
+  transition: var(--transition);
+  z-index: 1;
+}
+
+.student-search-clear.visible { display: flex; }
+.student-search-clear:active  { background: var(--gray-400); color: white; }
+
+/* ── Dropdown container ── */
+.student-search-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 300;
+  background: var(--white);
+  border: 1.5px solid var(--blue-light);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  animation: fadeUp 0.15s ease both;
+  max-height: 280px;
+  overflow-y: auto;
+  /* Smooth momentum scroll on iOS */
+  -webkit-overflow-scrolling: touch;
+}
+
+.student-search-dropdown.open { display: block; }
+
+/* ── Section label inside dropdown (e.g. "Active Now") ── */
+.search-dropdown-section {
+  padding: 6px 14px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-400);
+}
+
+/* ── Individual suggestion row ── */
+.search-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: 52px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--gray-100);
+  transition: background 0.12s;
+  touch-action: manipulation;
+}
+
+.search-suggestion-item:last-child    { border-bottom: none; }
+.search-suggestion-item:active        { background: var(--blue-pale); }
+
+/* ── Route number pill on left ── */
+.search-suggestion-num {
+  flex-shrink: 0;
+  min-width: 36px;
+  height: 36px;
+  background: var(--blue-pale);
+  color: var(--blue);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Active buses get a green tinted pill */
+.search-suggestion-item.active-bus .search-suggestion-num {
+  background: var(--green-light, #d1fae5);
+  color: #065f46;
+}
+
+/* ── Text area — route area name and meta ── */
+.search-suggestion-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-suggestion-area {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-suggestion-area mark {
+  background: transparent;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.search-suggestion-meta {
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-top: 1px;
+}
+
+/* ── Live badge on active buses ── */
+.search-live-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 50px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.search-live-dot {
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Empty state ── */
+.search-dropdown-empty {
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--gray-400);
+}
+
+/* ── Hidden route number field (holds resolved route_no for tracking) ── */
+.student-busno-hidden { display: none; }

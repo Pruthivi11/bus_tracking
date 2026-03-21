@@ -38,16 +38,32 @@ let reminders = { km2: false, km1: false, m500: false };
 // ─────────────────────────────────────────────
 // DOM REFERENCES
 // ─────────────────────────────────────────────
-const rollNoEl        = document.getElementById("rollNo");
-const busNoEl         = document.getElementById("busNo");
-const showBtn         = document.getElementById("showMap");
-const mapEl           = document.getElementById("map");
-const selectDestBtn   = document.getElementById("selectDestination");
+const rollNoEl         = document.getElementById("rollNo");
+const busNoEl          = document.getElementById("busNo");           // hidden — holds resolved route_no
+const studentSearchEl  = document.getElementById("studentSearch");   // visible search bar
+const searchClearBtn   = document.getElementById("studentSearchClear");
+const searchDropdownEl = document.getElementById("studentSearchDropdown");
+const showBtn          = document.getElementById("showMap");
+const mapEl            = document.getElementById("map");
+const selectDestBtn    = document.getElementById("selectDestination");
 const destinationBlock = document.getElementById("destinationBlock");
-const reminderBox     = document.getElementById("reminderBox");
-const rem2km          = document.getElementById("rem2km");
-const rem1km          = document.getElementById("rem1km");
-const rem500m         = document.getElementById("rem500m");
+const reminderBox      = document.getElementById("reminderBox");
+const rem2km           = document.getElementById("rem2km");
+const rem1km           = document.getElementById("rem1km");
+const rem500m          = document.getElementById("rem500m");
+
+
+// ─────────────────────────────────────────────
+// SMART SEARCH STATE
+// ─────────────────────────────────────────────
+
+/**
+ * The resolved selection from the dropdown.
+ * Populated by onSuggestionClick() and cleared when the search input changes.
+ * loadBusLocations() reads busNoEl.value (= selectedRoute.route_no) —
+ * this object provides context (e.g. route_area) for display.
+ */
+let selectedRoute = null;   // { route_no, route_area, is_active } | null
 
 
 // ─────────────────────────────────────────────
@@ -105,6 +121,216 @@ function updateBusStatus(bus, busNo) {
   } else {
     setStatus(`🟢 Bus ${busNo} (${bus.busType}) active`);
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SMART SEARCH  — unified route number + area search
+//
+// Flow:
+//   1. Student types in #studentSearch
+//   2. Debounced 250ms → fetchRouteSuggestions(query)
+//      → GET /search_routes?q=<query>
+//      → Returns [{route_no, route_area, is_active}]
+//   3. renderSuggestions(list) builds the dropdown
+//   4. onSuggestionClick(item):
+//      → fills #studentSearch with "22 — Karayanchavadi"
+//      → sets hidden #busNo to "22"
+//      → stores selectedRoute for context
+//
+// loadBusLocations() reads busNoEl.value (= route_no) — UNCHANGED.
+// ═══════════════════════════════════════════════════════════════════
+
+let _searchDebounce = null;
+
+studentSearchEl.addEventListener("input", () => {
+  const q = studentSearchEl.value.trim();
+
+  searchClearBtn.classList.toggle("visible", q.length > 0);
+
+  if (!q) {
+    clearSearchSelection();
+    hideSearchDropdown();
+    return;
+  }
+
+  // Invalidate stored selection if the field was edited after a pick
+  if (selectedRoute && studentSearchEl.value !== formatSuggestionLabel(selectedRoute)) {
+    selectedRoute = null;
+    busNoEl.value = "";
+  }
+
+  clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(() => fetchRouteSuggestions(q), 250);
+});
+
+studentSearchEl.addEventListener("focus", () => {
+  const q = studentSearchEl.value.trim();
+  if (q) fetchRouteSuggestions(q);
+});
+
+studentSearchEl.addEventListener("blur", () => {
+  setTimeout(hideSearchDropdown, 200);
+});
+
+searchClearBtn.addEventListener("click", () => {
+  studentSearchEl.value = "";
+  searchClearBtn.classList.remove("visible");
+  clearSearchSelection();
+  hideSearchDropdown();
+  studentSearchEl.focus();
+});
+
+document.addEventListener("click", (e) => {
+  if (
+    !searchDropdownEl.contains(e.target) &&
+    e.target !== studentSearchEl &&
+    e.target !== searchClearBtn
+  ) {
+    hideSearchDropdown();
+  }
+});
+
+
+async function fetchRouteSuggestions(query) {
+  try {
+    const url = `${BASE_URL}/search_routes?q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    const data = await res.json();
+    if (Array.isArray(data)) renderSuggestions(data, query);
+    else hideSearchDropdown();
+  } catch (err) {
+    console.error("[fetchRouteSuggestions] error:", err);
+    hideSearchDropdown();
+  }
+}
+
+
+function renderSuggestions(items, query) {
+  searchDropdownEl.innerHTML = "";
+
+  if (items.length === 0) {
+    searchDropdownEl.innerHTML =
+      '<li class="search-dropdown-empty">No matching routes found</li>';
+    _openSearchDropdown();
+    return;
+  }
+
+  const active   = items.filter(i => i.is_active);
+  const inactive = items.filter(i => !i.is_active);
+
+  if (active.length > 0) {
+    searchDropdownEl.appendChild(_sectionLabel("Active now"));
+    active.forEach(item =>
+      searchDropdownEl.appendChild(_buildSuggestionRow(item, query))
+    );
+  }
+
+  if (inactive.length > 0) {
+    if (active.length > 0) {
+      searchDropdownEl.appendChild(_sectionLabel("All routes"));
+    }
+    inactive.forEach(item =>
+      searchDropdownEl.appendChild(_buildSuggestionRow(item, query))
+    );
+  }
+
+  _openSearchDropdown();
+}
+
+
+function _sectionLabel(text) {
+  const li = document.createElement("li");
+  li.className = "search-dropdown-section";
+  li.textContent = text;
+  li.setAttribute("aria-hidden", "true");
+  return li;
+}
+
+
+function _buildSuggestionRow(item, query) {
+  const li = document.createElement("li");
+  li.className = `search-suggestion-item${item.is_active ? " active-bus" : ""}`;
+  li.role = "option";
+  li.setAttribute("aria-selected", "false");
+
+  const areaHtml  = highlightSearchMatch(item.route_area || "", query);
+  const liveBadge = item.is_active
+    ? `<span class="search-live-badge">
+         <span class="search-live-dot"></span>Live
+       </span>`
+    : "";
+
+  li.innerHTML = `
+    <span class="search-suggestion-num">${escHtml(item.route_no)}</span>
+    <span class="search-suggestion-text">
+      <span class="search-suggestion-area">${areaHtml || "<em>Unknown area</em>"}</span>
+      <span class="search-suggestion-meta">Route ${escHtml(item.route_no)}</span>
+    </span>
+    ${liveBadge}
+  `;
+
+  li.addEventListener("mousedown", (e) => { e.preventDefault(); onSuggestionClick(item); });
+  li.addEventListener("touchend",  (e) => { e.preventDefault(); onSuggestionClick(item); });
+  return li;
+}
+
+
+function onSuggestionClick(item) {
+  selectedRoute         = item;
+  studentSearchEl.value = formatSuggestionLabel(item);
+  busNoEl.value         = item.route_no;   // this is what loadBusLocations() reads
+
+  searchClearBtn.classList.add("visible");
+  hideSearchDropdown();
+  studentSearchEl.blur();
+
+  console.log(
+    `[search] selected → route_no="${item.route_no}" ` +
+    `area="${item.route_area}" active=${item.is_active}`
+  );
+}
+
+
+function formatSuggestionLabel(item) {
+  return item.route_area
+    ? `${item.route_no} — ${item.route_area}`
+    : item.route_no;
+}
+
+function clearSearchSelection() {
+  selectedRoute = null;
+  busNoEl.value = "";
+}
+
+function _openSearchDropdown() {
+  studentSearchEl.setAttribute("aria-expanded", "true");
+  searchDropdownEl.classList.add("open");
+}
+
+function hideSearchDropdown() {
+  studentSearchEl.setAttribute("aria-expanded", "false");
+  searchDropdownEl.classList.remove("open");
+  searchDropdownEl.innerHTML = "";
+}
+
+function highlightSearchMatch(text, query) {
+  if (!query || !text) return escHtml(text);
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return escHtml(text);
+  return (
+    escHtml(text.slice(0, idx)) +
+    "<mark>" + escHtml(text.slice(idx, idx + query.length)) + "</mark>" +
+    escHtml(text.slice(idx + query.length))
+  );
+}
+
+function escHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 
@@ -363,11 +589,23 @@ async function loadBusLocations(studentLat, studentLng) {
 // SHOW MAP BUTTON
 // ─────────────────────────────────────────────
 showBtn.addEventListener("click", () => {
-  const roll = rollNoEl.value.trim();
-  const bus  = busNoEl.value.trim();
+  const roll   = rollNoEl.value.trim();
+  const busNo  = busNoEl.value.trim();          // resolved route_no (hidden field)
+  const search = studentSearchEl.value.trim();  // what the student typed / selected
 
-  if (!roll || !bus) {
-    alert("Enter Roll No & Bus No.");
+  if (!roll) {
+    alert("Enter your Roll Number");
+    return;
+  }
+
+  if (!busNo) {
+    // Student typed something but didn't pick from the dropdown
+    if (search) {
+      alert("Select a route from the suggestions below your search.");
+    } else {
+      alert("Search for your bus route first.");
+    }
+    studentSearchEl.focus();
     return;
   }
 

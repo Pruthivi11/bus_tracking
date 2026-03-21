@@ -67,12 +67,66 @@
           </div>
 
           <div class="form-group form-group-last">
-            <label class="form-label" for="busNo">Bus Number</label>
-            <div class="input-wrap">
-              <i class="fa-solid fa-bus input-icon"></i>
-              <input id="busNo" class="form-input" placeholder="e.g. Route 7"
-                     autocomplete="off" inputmode="text">
+            <label class="form-label" for="studentSearch">Bus Route</label>
+
+            <!--
+              Smart search wrap — position:relative so the dropdown
+              anchors directly below the input.
+            -->
+            <div class="student-search-wrap">
+              <i class="fa-solid fa-magnifying-glass student-search-icon"></i>
+
+              <input
+                id="studentSearch"
+                class="student-search-input"
+                type="search"
+                placeholder="Route number or area (e.g. 22 or Karayanchavadi)"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                aria-autocomplete="list"
+                aria-controls="studentSearchDropdown"
+                aria-expanded="false"
+              >
+
+              <!-- Tap to clear the field -->
+              <button
+                id="studentSearchClear"
+                class="student-search-clear"
+                type="button"
+                aria-label="Clear search"
+                tabindex="-1"
+              >
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+
+              <!--
+                Autocomplete dropdown — populated by student.js.
+                Each item has { route_no, route_area, is_active }.
+                Hidden by default; .open class shows it.
+              -->
+              <ul
+                id="studentSearchDropdown"
+                class="student-search-dropdown"
+                role="listbox"
+                aria-label="Route suggestions"
+              ></ul>
             </div>
+
+            <!--
+              Hidden input — holds the resolved route_no after selection.
+              loadBusLocations() reads busNoEl.value from this field
+              exactly as before — zero changes to tracking logic.
+            -->
+            <input
+              id="busNo"
+              class="student-busno-hidden"
+              type="text"
+              tabindex="-1"
+              aria-hidden="true"
+              readonly
+            >
           </div>
         </div>
 
