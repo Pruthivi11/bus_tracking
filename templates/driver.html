@@ -51,17 +51,11 @@
 
         <div class="card-body">
 
-          <!-- GPS hint -->
-          <div class="gps-bar">
-            <i class="fa-solid fa-location-crosshairs gps-icon"></i>
-            <span>GPS activates automatically when you start the trip</span>
-          </div>
-
-          <!-- ── ROUTE NUMBER ──────────────────────────────────────
-               Driver enters the bus number here (e.g. "12").
-               On input, /get-route is called and #routeArea is
-               auto-filled with the matching route from bus_details.xlsx.
-          ─────────────────────────────────────────────────────── -->
+          <!-- ── ROUTE NUMBER ─────────────────────────────────────
+               Driver enters bus number (e.g. "12").
+               On input/blur, /get-route autofills the Route Area field
+               with the matching area from bus_details.
+          ──────────────────────────────────────────────────────── -->
           <div class="form-group">
             <label class="form-label" for="routeNo">Route Number</label>
             <div class="input-wrap">
@@ -75,10 +69,7 @@
                 autocomplete="off"
                 maxlength="10"
               >
-              <!--
-                Tiny spinner shown while /get-route is fetching.
-                Controlled by .visible class via driver.js.
-              -->
+              <!-- Spinner shown while /get-route is fetching -->
               <span
                 id="routeLoadingIcon"
                 class="route-loading-indicator"
@@ -87,43 +78,46 @@
             </div>
           </div>
 
-          <!-- ── ROUTE AREA ─────────────────────────────────────────
-               Auto-filled from Excel recommendation.
-               Driver can freely edit to override — this is intentional.
-               .route-modified class (amber border) signals an override.
-          ─────────────────────────────────────────────────────── -->
+          <!-- ── ROUTE AREA ─────────────────────────────────────
+               Auto-filled from bus_details when route number is entered.
+               Driver can type to search all known routes — a dropdown
+               of matching options appears from the dataset.
+               Selecting from the dropdown (or keeping the autofill)
+               sets the final route area sent with location updates.
+          ──────────────────────────────────────────────────────── -->
           <div class="form-group">
             <label class="form-label" for="routeArea">Route Area</label>
-            <div class="input-wrap">
-              <i class="fa-solid fa-map-location-dot input-icon"></i>
-              <input
-                id="routeArea"
-                class="form-input"
-                type="text"
-                placeholder="e.g. Velachery (auto-filled or type manually)"
-                autocomplete="off"
-              >
-            </div>
 
             <!--
-              Suggestion badge — visible when a match is found in Excel.
-              Clicking it re-accepts the suggestion (resets any override).
-              Controlled by .visible class via driver.js.
+              route-area-wrap is position:relative so the dropdown
+              positions itself directly below the input.
             -->
-            <div id="routeSuggestion" class="route-suggestion" role="status" aria-live="polite">
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-              <span class="route-suggestion-text" id="suggestionText"></span>
-              <span class="route-suggestion-label">Suggested · tap to accept</span>
-            </div>
+            <div class="route-area-wrap">
+              <div class="input-wrap">
+                <i class="fa-solid fa-map-location-dot input-icon"></i>
+                <input
+                  id="routeArea"
+                  class="form-input"
+                  type="text"
+                  placeholder="Auto-filled — or type to search"
+                  autocomplete="off"
+                  aria-autocomplete="list"
+                  aria-controls="routeAreaDropdown"
+                  aria-expanded="false"
+                >
+              </div>
 
-            <!--
-              No-match hint — visible when bus_no is not in Excel.
-              Driver can still type a route area manually.
-              Controlled by .visible class via driver.js.
-            -->
-            <div id="routeNoMatch" class="route-no-match" role="status" aria-live="polite">
-              <i class="fa-solid fa-circle-info"></i>
-              <span>No preset route for this number — type the area manually.</span>
+              <!--
+                Autocomplete dropdown — populated dynamically by driver.js.
+                Items come only from the bus_details dataset (/routes endpoint).
+                Hidden by default; .open class makes it visible.
+              -->
+              <ul
+                id="routeAreaDropdown"
+                class="route-dropdown"
+                role="listbox"
+                aria-label="Route area suggestions"
+              ></ul>
             </div>
           </div>
 
@@ -165,10 +159,8 @@
 
   <footer>&copy; 2026 Commute Assistant</footer>
 
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-
   <!--
-    BASE_URL is set by Flask from the BACKEND_URL env var (same as student.html).
+    BASE_URL is set by Flask from the BACKEND_URL env var.
     Must appear before driver.js so BASE_URL is defined when that script runs.
     Empty string = same-origin. Set BACKEND_URL env var for cross-origin deployments.
   -->

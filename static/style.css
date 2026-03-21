@@ -2332,3 +2332,82 @@ body.page-admin main {
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
   white-space: nowrap;
 }
+
+
+/* ============================================================
+   18. ROUTE AREA AUTOCOMPLETE DROPDOWN
+   Used by the driver dashboard — mobile-first, tap-friendly.
+   ============================================================ */
+
+/* Wrapper must be position:relative so dropdown positions against it */
+.route-area-wrap {
+  position: relative;
+}
+
+/* Dropdown list */
+.route-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--white);
+  border: 1.5px solid var(--blue-light);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  animation: fadeUp 0.15s ease both;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.route-dropdown.open { display: block; }
+
+/* Individual suggestion item */
+.route-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 14px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--gray-800);
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--gray-100);
+  /* min touch target */
+  min-height: var(--touch-min, 48px);
+}
+
+.route-dropdown-item:last-child { border-bottom: none; }
+
+.route-dropdown-item:active,
+.route-dropdown-item.selected {
+  background: var(--blue-pale);
+  color: var(--blue);
+}
+
+.route-dropdown-item-icon {
+  color: var(--blue-light);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* Highlighted match portion */
+.route-dropdown-item mark {
+  background: transparent;
+  color: var(--blue);
+  font-weight: 600;
+}
+
+/* Empty state inside dropdown */
+.route-dropdown-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--gray-400);
+  text-align: center;
+}

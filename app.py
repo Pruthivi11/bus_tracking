@@ -841,6 +841,31 @@ def get_route_api():
     })
 
 
+@app.route("/routes")
+def routes_autocomplete():
+    """
+    GET /routes?q=vel
+
+    Returns a sorted list of route area names that contain the query string.
+    Used by the driver dashboard autocomplete dropdown.
+    Reads from BUS_ROUTE_CACHE (in-memory, O(n) scan) — no DB hit.
+
+    Response: ["Tambaram", "Velachery"] (max 8 results, alphabetically sorted)
+    """
+    query = str(request.args.get("q", "")).strip().lower()
+
+    if not query:
+        # Return all routes when query is empty (useful for initial dropdown)
+        matches = sorted(set(BUS_ROUTE_CACHE.values()))[:8]
+    else:
+        matches = sorted(
+            {v for v in BUS_ROUTE_CACHE.values()
+             if query in v.lower()},
+        )[:8]
+
+    return jsonify(matches)
+
+
 # ─────────────────────────────────────────────
 # ADMIN — BUS DETAILS MANAGEMENT
 # ─────────────────────────────────────────────

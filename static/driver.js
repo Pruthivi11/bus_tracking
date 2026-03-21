@@ -1,114 +1,100 @@
 /**
  * driver.js — Commute Assistant
  *
- * Handles trip start/end, GPS tracking, and smart route recommendation.
- *
  * Route inputs:
- *   #routeNo   — Bus number (e.g. "12")  → looked up in bus_details.xlsx via /get-route
- *   #routeArea — Route area (e.g. "Velachery") → auto-filled, driver can override
+ *   #routeNo   — Bus number (e.g. "12")
+ *                On input/blur → /get-route autofills #routeArea with the
+ *                matching area from bus_details (unchanged behaviour).
  *
- * The value sent to /location as `route` is routeNo normalised to UPPERCASE,
- * keeping it consistent with student-side comparison and backend storage.
- * The routeArea is sent as the additional `busRoute` field.
+ *   #routeArea — Route area (e.g. "Velachery")
+ *                Auto-filled by route number lookup.
+ *                If driver types, a dropdown of matching areas from the
+ *                bus_details dataset appears (via GET /routes?q=<input>).
+ *                Selecting a dropdown item sets the field.
+ *                If nothing is selected the autofilled default is used.
+ *
+ * All fetch() calls use BASE_URL (injected by Flask) so the code works
+ * on same-origin and cross-origin Render deployments.
  */
 
 'use strict';
 
 // ─────────────────────────────────────────────
 // BASE URL
-// Injected by Flask into driver.html as window.BASE_URL before this
-// script loads. Ensures all fetch() calls reach the correct backend
-// on Render cross-origin deployments. Never hardcode localhost.
 // ─────────────────────────────────────────────
-const BASE_URL = (typeof window.BASE_URL === 'string' ? window.BASE_URL : '').replace(/\/$/, '');
+const BASE_URL = (typeof window.BASE_URL === 'string'
+  ? window.BASE_URL
+  : '').replace(/\/$/, '');
 
-let watchId   = null;
+
+// ─────────────────────────────────────────────
+// TRIP STATE
+// ─────────────────────────────────────────────
+let watchId    = null;
 let tripActive = false;
 
-const startBtn  = document.getElementById("startBtn");
-const endBtn    = document.getElementById("endBtn");
+const startBtn = document.getElementById("startBtn");
+const endBtn   = document.getElementById("endBtn");
+
 
 // ─────────────────────────────────────────────
-// STATUS BANNER
-// setStatus is defined in driver.html to use the
-// styled banner; this fallback handles edge cases.
+// STATUS BANNER FALLBACK
+// setStatus is overridden in driver.html; this handles any call
+// that fires before that override is installed.
 // ─────────────────────────────────────────────
-
 if (typeof setStatus !== "function") {
   window.setStatus = function(text, color) {
-    console.log("Status:", text, color);
+    console.log("[setStatus]", text, color);
   };
 }
 
 
 // ─────────────────────────────────────────────
-// ROUTE RECOMMENDATION
+// DOM REFS
 // ─────────────────────────────────────────────
+const routeNoInput     = document.getElementById("routeNo");
+const routeAreaInput   = document.getElementById("routeArea");
+const routeDropdown    = document.getElementById("routeAreaDropdown");
+const routeLoadingIcon = document.getElementById("routeLoadingIcon");
 
-const routeNoInput      = document.getElementById("routeNo");
-const routeAreaInput    = document.getElementById("routeArea");
-const routeSuggestion   = document.getElementById("routeSuggestion");
-const suggestionText    = document.getElementById("suggestionText");
-const routeNoMatch      = document.getElementById("routeNoMatch");
-const routeLoadingIcon  = document.getElementById("routeLoadingIcon");
 
-// Track whether the driver manually edited the area field
-let routeAreaModified = false;
-// Track the last suggestion so we can detect overrides
-let lastSuggestion    = "";
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let lastSuggestion    = "";   // area autofilled from route number
+let routeAreaModified = false;  // true once driver manually edits the area
 
-/**
- * Called on every input event on #routeNo.
- * Debounced to avoid a fetch on every keystroke.
- */
-let _routeDebounce = null;
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 1: ROUTE NUMBER → AREA AUTOFILL
+//   When driver enters a bus number, /get-route is called.
+//   The returned area is placed in #routeArea if the driver
+//   has not manually modified it.
+// ═══════════════════════════════════════════════════════════════
+
+let _routeNoDebounce = null;
+
 routeNoInput.addEventListener("input", () => {
-  clearTimeout(_routeDebounce);
-  _routeDebounce = setTimeout(fetchRouteRecommendation, 400);
+  clearTimeout(_routeNoDebounce);
+  _routeNoDebounce = setTimeout(fetchRouteRecommendation, 400);
 });
 
-/**
- * Also trigger on blur so recommendation fires even if
- * the driver pastes a number without triggering input events.
- */
+// Trigger on blur too — handles paste without input event
 routeNoInput.addEventListener("blur", fetchRouteRecommendation);
 
 /**
- * Mark route area as modified when driver edits it,
- * so we know not to overwrite it with a future suggestion.
- */
-routeAreaInput.addEventListener("input", () => {
-  if (routeAreaInput.value.trim() !== lastSuggestion) {
-    routeAreaModified = true;
-    routeAreaInput.classList.add("route-modified");
-    // Hide suggestion badge if driver is actively editing
-    routeSuggestion.classList.remove("visible");
-    routeNoMatch.classList.remove("visible");
-  } else {
-    routeAreaModified = false;
-    routeAreaInput.classList.remove("route-modified");
-  }
-});
-
-/**
- * Fetch the recommended route area for the entered bus number.
- * Auto-fills #routeArea if driver has NOT manually modified it.
+ * Look up the default route area for the entered bus number.
+ * Autofills #routeArea only if the driver has not yet modified it.
  */
 async function fetchRouteRecommendation() {
   const busNo = routeNoInput.value.trim().toUpperCase();
 
-  // Clear badges on empty input
   if (!busNo) {
-    routeSuggestion.classList.remove("visible");
-    routeNoMatch.classList.remove("visible");
     routeLoadingIcon.classList.remove("visible");
     return;
   }
 
-  // Show loading spinner on the routeNo input
   routeLoadingIcon.classList.add("visible");
-  routeSuggestion.classList.remove("visible");
-  routeNoMatch.classList.remove("visible");
 
   try {
     const res  = await fetch(`${BASE_URL}/get-route?bus_no=${encodeURIComponent(busNo)}`);
@@ -119,51 +105,204 @@ async function fetchRouteRecommendation() {
     if (data.found && data.bus_route) {
       lastSuggestion = data.bus_route;
 
-      // Only autofill if driver has NOT manually modified the area
       if (!routeAreaModified) {
+        // Autofill only — driver hasn't overridden yet
         routeAreaInput.value = data.bus_route;
         routeAreaInput.classList.remove("route-modified");
       }
-
-      // Always show the suggestion badge
-      suggestionText.textContent = data.bus_route;
-      routeSuggestion.classList.add("visible");
-      routeNoMatch.classList.remove("visible");
-
     } else {
-      // Bus number not found in Excel
       lastSuggestion = "";
-      routeSuggestion.classList.remove("visible");
-      routeNoMatch.classList.add("visible");
     }
 
   } catch (err) {
     console.error("[fetchRouteRecommendation] error:", err);
     routeLoadingIcon.classList.remove("visible");
-    // Fail silently — driver can still type the area manually
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 2: ROUTE AREA AUTOCOMPLETE DROPDOWN
+//   When the driver types in #routeArea, GET /routes?q=<query>
+//   is called and matching areas from the bus_details dataset
+//   are shown as a tap-friendly dropdown.
+//   Selecting an item fills the field and closes the dropdown.
+// ═══════════════════════════════════════════════════════════════
+
+let _routeAreaDebounce = null;
+
+routeAreaInput.addEventListener("input", () => {
+  routeAreaModified = true;
+  routeAreaInput.classList.add("route-modified");
+
+  clearTimeout(_routeAreaDebounce);
+  _routeAreaDebounce = setTimeout(() => {
+    fetchRouteSuggestions(routeAreaInput.value.trim());
+  }, 250);
+});
+
+// Open dropdown on focus if field already has content
+routeAreaInput.addEventListener("focus", () => {
+  const q = routeAreaInput.value.trim();
+  if (q.length > 0) {
+    fetchRouteSuggestions(q);
+  }
+});
+
+// Close dropdown on blur — small delay so a tap on an item registers first
+routeAreaInput.addEventListener("blur", () => {
+  setTimeout(hideDropdown, 180);
+});
+
+// Sync aria-expanded with dropdown visibility
+function _setDropdownOpen(open) {
+  routeAreaInput.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    routeDropdown.classList.add("open");
+  } else {
+    routeDropdown.classList.remove("open");
   }
 }
 
 /**
- * Allow driver to accept the suggestion by clicking the badge.
- * This resets any manual override.
+ * Fetch matching route areas from /routes?q=<query>.
+ * Renders results as tappable list items in #routeAreaDropdown.
+ *
+ * @param {string} query - The text the driver has typed so far
  */
-routeSuggestion.addEventListener("click", () => {
-  if (lastSuggestion) {
-    routeAreaInput.value = lastSuggestion;
-    routeAreaInput.classList.remove("route-modified");
-    routeAreaModified    = false;
-    routeSuggestion.classList.remove("visible");
+async function fetchRouteSuggestions(query) {
+  try {
+    const url = `${BASE_URL}/routes?q=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    const suggestions = await res.json();
+
+    if (!Array.isArray(suggestions)) { hideDropdown(); return; }
+
+    renderDropdown(suggestions, query);
+
+  } catch (err) {
+    console.error("[fetchRouteSuggestions] error:", err);
+    hideDropdown();
+  }
+}
+
+/**
+ * Build dropdown list items from an array of route area strings.
+ * Highlights the matching portion of each item with <mark>.
+ *
+ * @param {string[]} items  - Array of matching route area names
+ * @param {string}   query  - Current input text (used for highlighting)
+ */
+function renderDropdown(items, query) {
+  routeDropdown.innerHTML = "";
+
+  if (items.length === 0) {
+    routeDropdown.innerHTML =
+      '<li class="route-dropdown-empty">No matching routes</li>';
+    _setDropdownOpen(true);
+    return;
+  }
+
+  items.forEach(area => {
+    const li = document.createElement("li");
+    li.className    = "route-dropdown-item";
+    li.role         = "option";
+    li.setAttribute("aria-selected", "false");
+
+    // Highlight the matched portion
+    const highlighted = highlightMatch(area, query);
+    li.innerHTML = `
+      <i class="fa-solid fa-location-dot route-dropdown-item-icon"></i>
+      <span>${highlighted}</span>
+    `;
+
+    // Use mousedown (fires before blur) so the click registers before
+    // the blur handler hides the dropdown
+    li.addEventListener("mousedown", (e) => {
+      e.preventDefault();       // prevent blur from firing first
+      selectSuggestion(area);
+    });
+
+    // Touch support for mobile
+    li.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      selectSuggestion(area);
+    });
+
+    routeDropdown.appendChild(li);
+  });
+
+  _setDropdownOpen(true);
+}
+
+/**
+ * Fill the route area input with the selected suggestion,
+ * clear the modified flag (this is now a valid dataset selection),
+ * and close the dropdown.
+ *
+ * @param {string} value - The selected route area name
+ */
+function selectSuggestion(value) {
+  routeAreaInput.value = value;
+  routeAreaInput.classList.remove("route-modified");
+  routeAreaModified    = false;
+  lastSuggestion       = value;
+  hideDropdown();
+  routeAreaInput.blur();
+}
+
+/**
+ * Close and empty the dropdown.
+ */
+function hideDropdown() {
+  _setDropdownOpen(false);
+  routeDropdown.innerHTML = "";
+}
+
+/**
+ * Wrap the matched portion of text in <mark> tags for highlighting.
+ * Case-insensitive. Returns escaped HTML to prevent injection.
+ *
+ * @param {string} text  - Full route area name
+ * @param {string} query - Text to highlight
+ * @returns {string} HTML string with <mark> around match
+ */
+function highlightMatch(text, query) {
+  if (!query) return escHtml(text);
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return escHtml(text);
+  return (
+    escHtml(text.slice(0, idx)) +
+    "<mark>" + escHtml(text.slice(idx, idx + query.length)) + "</mark>" +
+    escHtml(text.slice(idx + query.length))
+  );
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Close dropdown if driver taps anywhere outside it
+document.addEventListener("click", (e) => {
+  if (!routeDropdown.contains(e.target) && e.target !== routeAreaInput) {
+    hideDropdown();
   }
 });
 
 
-// ─────────────────────────────────────────────
-// TRIP CONTROLS
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// SECTION 3: TRIP CONTROLS
+//   startTrip, endTrip, logout — fully unchanged from previous
+//   version except routeArea is sourced from the (possibly
+//   dropdown-selected) value of #routeArea.
+// ═══════════════════════════════════════════════════════════════
 
 function startTrip() {
-  // Normalise to UPPERCASE — must match backend _normalize_route() and student comparison
+  // Normalise to UPPERCASE — matches backend _normalize_route() and student comparison
   const routeNo   = routeNoInput.value.trim().toUpperCase();
   const routeArea = routeAreaInput.value.trim();
   const busType   = document.getElementById("busType").value;
@@ -177,7 +316,7 @@ function startTrip() {
     return;
   }
 
-  // Reflect normalised value back in the input so driver sees what was stored
+  // Reflect normalised value back so driver sees what will be stored
   routeNoInput.value = routeNo;
 
   tripActive = true;
@@ -229,7 +368,6 @@ function startTrip() {
 }
 
 function endTrip() {
-  // Normalise consistently with startTrip and backend
   const routeNo = routeNoInput.value.trim().toUpperCase();
 
   tripActive = false;
@@ -260,27 +398,26 @@ function logout() {
 }
 
 
-// ─────────────────────────────────────────────
-// FIELD ERROR HELPER
-// Shows a brief shake + border highlight on invalid field.
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// SECTION 4: FIELD ERROR HELPER
+// ═══════════════════════════════════════════════════════════════
 
 function showFieldError(inputEl, message) {
-  inputEl.classList.add("route-modified");    // reuse amber border
+  inputEl.classList.add("route-modified");
   inputEl.focus();
-  // Brief shake via a transient class
-  inputEl.animate
-    ? inputEl.animate(
-        [
-          { transform: "translateX(0)" },
-          { transform: "translateX(-5px)" },
-          { transform: "translateX(5px)" },
-          { transform: "translateX(0)" }
-        ],
-        { duration: 300, easing: "ease" }
-      )
-    : null;
-  // Use native tooltip-style placeholder warning
+
+  if (inputEl.animate) {
+    inputEl.animate(
+      [
+        { transform: "translateX(0)" },
+        { transform: "translateX(-5px)" },
+        { transform: "translateX(5px)" },
+        { transform: "translateX(0)" }
+      ],
+      { duration: 300, easing: "ease" }
+    );
+  }
+
   const orig = inputEl.placeholder;
   inputEl.placeholder = message;
   setTimeout(() => { inputEl.placeholder = orig; }, 2500);
