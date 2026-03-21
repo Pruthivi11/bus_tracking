@@ -95,7 +95,10 @@ function setStatus(text) {
 // BUS STATUS TEXT
 // ─────────────────────────────────────────────
 function updateBusStatus(bus, busNo) {
-  if (!bus.active || bus.lastSeen > 60) {
+  // backend `active` is the single source of truth — no secondary time check here.
+  // is_bus_active() on the backend already applies the threshold; duplicating it
+  // here with a different value (60s vs 300s) created false "not active" reports.
+  if (!bus.active) {
     setStatus(`🔴 Bus ${busNo} is not active`);
   } else if (bus.lastSeen > 20) {
     setStatus(`🟡 Bus ${busNo} updating…`);

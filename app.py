@@ -1048,14 +1048,14 @@ def get_locations():
     """
     READ-ONLY endpoint. Never writes to the database.
 
-    Active status is computed by is_bus_active(bus.timestamp) which:
-      - Uses a single 5-minute threshold (INACTIVITY_THRESHOLD_SECONDS)
-      - Strips timezone info before comparison (Render Postgres fix)
-      - Logs every bus with its exact timestamp and computed result
+    Activity is determined SOLELY by is_bus_active(bus.timestamp).
+    The DB `active` flag is NOT used in the activity calculation here.
 
-    The DB `active` flag is the authoritative write-side state set by
-    /location (True) and /end_trip (False). We AND it with the time check
-    so a bus that lost GPS but never called /end_trip still goes inactive.
+    Rationale:
+      - /location updates timestamp on every GPS ping → is_bus_active = True
+      - /end_trip rewinds timestamp past the threshold → is_bus_active = False
+      - Combining the flag AND the timestamp created false negatives when the
+        flag was stale (e.g. app restart, missed end_trip call).
     """
     print("[get_locations] ── endpoint hit ──")
 
@@ -1067,7 +1067,8 @@ def get_locations():
 
         for bus in buses:
             try:
-                active = is_bus_active(bus.timestamp) and bool(bus.active)
+                # Timestamp alone determines activity — single source of truth
+                active = is_bus_active(bus.timestamp)
 
                 print(
                     f"[get_locations] route={bus.route!r} "
@@ -1077,14 +1078,14 @@ def get_locations():
                 )
 
                 result.append({
-                    "route":     bus.route,            # already normalised (stored upper)
+                    "route":     bus.route,
                     "busType":   bus.bus_type  or "",
                     "busRoute":  bus.bus_route or "",
                     "lat":       bus.lat,
                     "lng":       bus.lng,
                     "lastSeen":  int((datetime.utcnow() - bus.timestamp).total_seconds())
                                  if bus.timestamp else None,
-                    "active":    active,               # computed — NOT written to DB
+                    "active":    active,
                     "timestamp": bus.timestamp.isoformat() if bus.timestamp else None,
                 })
 
@@ -1118,11 +1119,18 @@ def end_trip():
 
     bus = BusLocation.query.filter_by(route=route).first()
     if bus:
-        bus.active = False
-        bus.lat    = None
-        bus.lng    = None
+        # Rewind the timestamp far enough past INACTIVITY_THRESHOLD_SECONDS so
+        # is_bus_active(bus.timestamp) returns False on the very next student poll.
+        # This keeps /end_trip consistent with the timestamp-only activity model.
+        bus.timestamp = datetime.utcnow() - timedelta(seconds=INACTIVITY_THRESHOLD_SECONDS + 10)
+        bus.active    = False
+        bus.lat       = None
+        bus.lng       = None
         db.session.commit()
-        print(f"[end_trip] route={route!r} marked inactive, lat/lng cleared")
+        print(
+            f"[end_trip] route={route!r} — timestamp rewound, active=False, "
+            f"lat/lng cleared"
+        )
     else:
         print(f"[end_trip] route={route!r} not found in DB — nothing to update")
 
