@@ -264,6 +264,100 @@ def is_bus_active(last_updated) -> bool:
 
 
 # ─────────────────────────────────────────────
+# COLUMN MIGRATION HELPER
+#
+# db.create_all() creates missing tables but NEVER alters existing ones.
+# Any column added to a SQLAlchemy model after initial deployment will be
+# present in Python but absent from the live PostgreSQL table, causing
+# "UndefinedColumn" errors at runtime.
+#
+# _run_column_migrations() closes this gap by:
+#   1. Inspecting the live DB schema via SQLAlchemy's Inspector
+#   2. Comparing it against each model's column definitions
+#   3. Issuing ALTER TABLE … ADD COLUMN IF NOT EXISTS for any gap
+#
+# This is idempotent — safe to call on every app restart.
+# It preserves all existing data and never drops or modifies columns.
+# ─────────────────────────────────────────────
+
+def _run_column_migrations():
+    """
+    Detect and add any model columns that are missing from the live DB.
+    Runs once at startup inside the app context, after db.create_all().
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+
+    inspector = sa_inspect(db.engine)
+
+    # Map each SQLAlchemy model to its expected columns.
+    # Add new entries here whenever a column is added to a model.
+    models_to_check = [
+        BusLocation,
+        AuthorizedDriver,
+        BusDetails,
+        Onboard,
+        Driver,
+    ]
+
+    # PostgreSQL type map: SQLAlchemy type class → SQL type string
+    _type_map = {
+        "String":   lambda col: f"VARCHAR({col.type.length or 255})",
+        "Text":     lambda col: "TEXT",
+        "Integer":  lambda col: "INTEGER",
+        "Float":    lambda col: "DOUBLE PRECISION",
+        "Boolean":  lambda col: "BOOLEAN",
+        "DateTime": lambda col: "TIMESTAMP WITHOUT TIME ZONE",
+    }
+
+    for model in models_to_check:
+        table_name = model.__tablename__
+
+        # Skip tables that don't exist yet — db.create_all() will create them
+        if not inspector.has_table(table_name):
+            print(f"[migration] table '{table_name}' not found — skipping (create_all handles it)")
+            continue
+
+        existing_columns = {
+            col["name"] for col in inspector.get_columns(table_name)
+        }
+
+        for col in model.__table__.columns:
+            if col.name in existing_columns:
+                continue  # column already present — nothing to do
+
+            # Determine the SQL type string
+            type_name = type(col.type).__name__
+            sql_type  = _type_map.get(type_name, lambda c: "TEXT")(col)
+
+            nullable_clause = "" if col.nullable else " NOT NULL"
+
+            # Build a safe default clause so NOT NULL columns can be added
+            # to tables that may already have rows
+            default_clause = ""
+            if not col.nullable:
+                if   type_name == "Boolean":  default_clause = " DEFAULT FALSE"
+                elif type_name == "Integer":  default_clause = " DEFAULT 0"
+                elif type_name == "Float":    default_clause = " DEFAULT 0.0"
+                else:                         default_clause = " DEFAULT ''"
+
+            alter_sql = (
+                f"ALTER TABLE {table_name} "
+                f"ADD COLUMN IF NOT EXISTS {col.name} {sql_type}"
+                f"{default_clause}{nullable_clause}"
+            )
+
+            try:
+                db.session.execute(text(alter_sql))
+                db.session.commit()
+                print(f"[migration] ✅ added column '{table_name}.{col.name}' ({sql_type})")
+            except Exception as e:
+                db.session.rollback()
+                print(f"[migration] ❌ failed to add '{table_name}.{col.name}': {e}")
+
+    print("[migration] column migration check complete")
+
+
+# ─────────────────────────────────────────────
 # BUS DETAILS — SEED + CACHE HELPERS
 # ─────────────────────────────────────────────
 
@@ -390,10 +484,18 @@ def load_drivers():
 
 
 with app.app_context():
-    db.create_all()
-    load_drivers()
 
-    # Seed BusDetails from Excel on first run, then warm the route cache
+    # ── Step 1: create any tables that are completely missing ──
+    db.create_all()
+
+    # ── Step 2: add any columns missing from existing tables ──
+    # db.create_all() never alters existing tables, so columns added to
+    # SQLAlchemy models after the initial deployment are silently absent
+    # from the live DB. This migration function closes that gap safely.
+    _run_column_migrations()
+
+    # ── Step 3: seed and cache ──
+    load_drivers()
     if BusDetails.query.count() == 0:
         _seed_bus_details_from_excel()
     _warm_bus_route_cache()
