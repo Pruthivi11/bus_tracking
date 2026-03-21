@@ -57,3 +57,4 @@ pandas
 openpyxl
 requests
 redis
+flask-limiter

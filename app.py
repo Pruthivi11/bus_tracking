@@ -1,12 +1,31 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import or_                          # Change 4: explicit or_ import
+from sqlalchemy import or_
 from datetime import datetime, timedelta
 from functools import wraps
-import os, re
+import os, re, logging
 import pandas as pd
 import random
+import json as _json
+
+# ─────────────────────────────────────────────
+# LOGGING
+#
+# Structured logger used throughout the app instead of print().
+# Logs to stderr so Render's log aggregator captures everything,
+# AND to app.log for persistent local storage.
+# ─────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),                 # stderr → Render logs
+        logging.FileHandler("app.log"),          # persistent local log file
+    ],
+)
+logger = logging.getLogger("commute")
 
 # ─────────────────────────────────────────────
 # APP SETUP
@@ -36,12 +55,49 @@ if DATABASE_URL.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"]    = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Change 6: Secure session cookies
+# Change 1: Connection pooling — prevents connection exhaustion under load.
+# pool_size:    persistent connections kept open
+# max_overflow: extra connections allowed above pool_size
+# pool_timeout: seconds to wait for a connection before raising
+# pool_recycle: recycle connections after this many seconds (avoids stale connections)
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_size":    5,
+    "max_overflow": 10,
+    "pool_timeout": 30,
+    "pool_recycle": 1800,
+}
+
+# Secure session cookies
 app.config["SESSION_COOKIE_HTTPONLY"]  = True
-app.config["SESSION_COOKIE_SECURE"]   = True        # requires HTTPS in production
+app.config["SESSION_COOKIE_SECURE"]   = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 db = SQLAlchemy(app)
+
+# ─────────────────────────────────────────────
+# RATE LIMITING  (Change 6)
+#
+# flask-limiter protects OTP endpoints from abuse.
+# Falls back gracefully when flask-limiter is not installed or
+# storage is unavailable — the app still functions, just without limits.
+# Set RATELIMIT_STORAGE_URL env var to your Redis URL for distributed limiting.
+# ─────────────────────────────────────────────
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    _limiter_storage = os.environ.get("RATELIMIT_STORAGE_URL") or os.environ.get("REDIS_URL")
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        storage_uri=_limiter_storage or "memory://",
+        default_limits=[],       # no default — only apply where explicitly decorated
+    )
+    logger.info("Rate limiter enabled (storage: %s)",
+                "redis" if _limiter_storage else "memory")
+except ImportError:
+    limiter = None
+    logger.warning("flask-limiter not installed — rate limiting disabled")
 
 # ─────────────────────────────────────────────
 # REDIS CACHE  (optional — graceful fallback if not configured)
@@ -72,14 +128,13 @@ if _REDIS_URL:
             socket_connect_timeout=2,
             socket_timeout=2,
         )
-        # Verify connection at startup
         redis_client.ping()
-        print(f"[redis] connected — caching enabled")
+        logger.info("[redis] connected — caching enabled")
     except Exception as _e:
-        print(f"[redis] connection failed ({_e}) — running without cache")
+        logger.warning("[redis] connection failed (%s) — running without cache", _e)
         redis_client = None
 else:
-    print("[redis] REDIS_URL not set — running without cache")
+    logger.info("[redis] REDIS_URL not set — running without cache")
 
 # ─────────────────────────────────────────────
 # CORS
@@ -224,8 +279,14 @@ class Onboard(db.Model):
     roll_no   = db.Column(db.String(20), nullable=False, index=True)
     bus_route = db.Column(db.String(20), nullable=False, index=True)
     onboard   = db.Column(db.Boolean, default=False)
-    # Change 3: index=True on timestamp — queried when checking recent onboard events
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        # Change 8: Composite index — covers the exact filter used by the upsert
+        # query in /onboard: filter_by(roll_no=x, bus_route=y).
+        # Faster than two separate single-column index scans.
+        db.Index("idx_onboard_roll_route", "roll_no", "bus_route"),
+    )
 
 
 class BusDetails(db.Model):
@@ -290,28 +351,27 @@ def is_bus_active(last_updated) -> bool:
     """
     Single source of truth for bus activity.
 
-    A bus is ACTIVE if it sent a location update within the last
-    INACTIVITY_THRESHOLD_SECONDS seconds (default: 300 / 5 minutes).
+    A bus is ACTIVE if its last location update is within
+    INACTIVITY_THRESHOLD_SECONDS + 10 seconds ago.
+    The +10 buffer (Change 13) prevents flickering at the boundary
+    where a bus updates at exactly the threshold interval.
 
-    Uses timezone-naive UTC comparison throughout.
-    Postgres may store timestamps with or without timezone info;
-    we strip tzinfo from the stored value before comparing to
-    prevent TypeError: can't compare offset-naive and offset-aware datetimes.
+    Strips tzinfo before comparison to handle both tz-aware
+    (Render Postgres) and tz-naive datetimes safely.
     """
     if not last_updated:
-        print("[is_bus_active] last_updated is None → inactive")
+        logger.debug("[is_bus_active] last_updated is None → inactive")
         return False
 
-    # Strip timezone info if present (Render Postgres returns tz-aware datetimes)
     if hasattr(last_updated, "tzinfo") and last_updated.tzinfo is not None:
         last_updated = last_updated.replace(tzinfo=None)
 
     age_seconds = (datetime.utcnow() - last_updated).total_seconds()
-    active       = age_seconds < INACTIVITY_THRESHOLD_SECONDS
+    active       = age_seconds < (INACTIVITY_THRESHOLD_SECONDS + 10)
 
-    print(
-        f"[is_bus_active] last_updated={last_updated.isoformat()} "
-        f"age={age_seconds:.1f}s threshold={INACTIVITY_THRESHOLD_SECONDS}s → {active}"
+    logger.debug(
+        "[is_bus_active] last_updated=%s age=%.1fs threshold=%ds → %s",
+        last_updated.isoformat(), age_seconds, INACTIVITY_THRESHOLD_SECONDS, active
     )
     return active
 
@@ -360,7 +420,7 @@ def _run_migrations():
         table_name = model.__tablename__
 
         if not inspector.has_table(table_name):
-            print(f"[migration] table '{table_name}' not found — db.create_all() will handle it")
+            logger.info("[migration] table '%s' not found — db.create_all() will handle it", table_name)
             continue
 
         existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
@@ -369,8 +429,8 @@ def _run_migrations():
             if col.name in existing_columns:
                 continue
 
-            type_name      = type(col.type).__name__
-            sql_type       = _type_map.get(type_name, lambda c: "TEXT")(col)
+            type_name       = type(col.type).__name__
+            sql_type        = _type_map.get(type_name, lambda c: "TEXT")(col)
             nullable_clause = "" if col.nullable else " NOT NULL"
             default_clause  = ""
             if not col.nullable:
@@ -388,53 +448,49 @@ def _run_migrations():
             try:
                 db.session.execute(text(alter_sql))
                 db.session.commit()
-                print(f"[migration] ✅ added column '{table_name}.{col.name}' ({sql_type})")
+                logger.info("[migration] ✅ added column '%s.%s' (%s)", table_name, col.name, sql_type)
             except Exception as e:
                 db.session.rollback()
-                print(f"[migration] ❌ failed to add '{table_name}.{col.name}': {e}")
+                logger.error("[migration] ❌ failed to add '%s.%s': %s", table_name, col.name, e)
 
     # ── Part B: create missing indexes ───────────────────────────────
 
-    # Each entry: (index_name, sql_to_create_it)
-    # All use CREATE INDEX IF NOT EXISTS so they are safe to re-run.
     _indexes = [
         (
             "idx_bus_location_route_ts",
-            # Composite index: route lookup + timestamp ordering in one scan.
-            # Covers: BusLocation.query.filter_by(route=x) with ORDER BY timestamp.
             "CREATE INDEX IF NOT EXISTS idx_bus_location_route_ts "
             "ON bus_location (route, timestamp)"
         ),
         (
             "idx_bus_details_route_area",
-            # B-tree index on bus_route for equality and ORDER BY.
             "CREATE INDEX IF NOT EXISTS idx_bus_details_route_area "
             "ON bus_details (bus_route)"
         ),
+        (
+            # Change 8: composite index on onboard table
+            "idx_onboard_roll_route",
+            "CREATE INDEX IF NOT EXISTS idx_onboard_roll_route "
+            "ON onboard (roll_no, bus_route)"
+        ),
     ]
 
-    # pg_trgm enables GIN indexes for fast ILIKE '%...%' (partial text search).
-    # Safe to run repeatedly — CREATE EXTENSION IF NOT EXISTS is a no-op when present.
     _trgm_enabled = False
     try:
         db.session.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         db.session.commit()
         _trgm_enabled = True
-        print("[migration] pg_trgm extension ready")
+        logger.info("[migration] pg_trgm extension ready")
     except Exception as e:
         db.session.rollback()
-        print(f"[migration] pg_trgm not available (non-fatal): {e}")
+        logger.warning("[migration] pg_trgm not available (non-fatal): %s", e)
 
     if _trgm_enabled:
         _indexes.append((
             "idx_bus_details_route_area_trgm",
-            # GIN trigram index: makes ILIKE '%karay%' queries fast.
-            # Used by admin_get_bus_routes() and /search_routes area matching.
             "CREATE INDEX IF NOT EXISTS idx_bus_details_route_area_trgm "
             "ON bus_details USING gin (bus_route gin_trgm_ops)"
         ))
 
-    # Fetch the set of indexes that already exist on these tables
     existing_indexes = set()
     for table in ("bus_location", "bus_details", "authorized_driver", "onboard", "driver"):
         if inspector.has_table(table):
@@ -443,17 +499,17 @@ def _run_migrations():
 
     for index_name, create_sql in _indexes:
         if index_name in existing_indexes:
-            print(f"[migration] index '{index_name}' already exists — skipping")
+            logger.info("[migration] index '%s' already exists — skipping", index_name)
             continue
         try:
             db.session.execute(text(create_sql))
             db.session.commit()
-            print(f"[migration] ✅ created index '{index_name}'")
+            logger.info("[migration] ✅ created index '%s'", index_name)
         except Exception as e:
             db.session.rollback()
-            print(f"[migration] ❌ failed to create index '{index_name}': {e}")
+            logger.error("[migration] ❌ failed to create index '%s': %s", index_name, e)
 
-    print("[migration] ── migration check complete ──")
+    logger.info("[migration] ── migration check complete ──")
 
 
 # ─────────────────────────────────────────────
@@ -481,11 +537,11 @@ def _seed_bus_details_from_excel():
                     inserted += 1
 
         db.session.commit()
-        print(f"BusDetails seeded: {inserted} new rows imported from {BUS_DETAILS_PATH}.")
+        logger.info("BusDetails seeded: %d new rows imported from %s", inserted, BUS_DETAILS_PATH)
     except FileNotFoundError:
-        print(f"[INFO] {BUS_DETAILS_PATH} not found — BusDetails table not seeded.")
+        logger.info("%s not found — BusDetails table not seeded.", BUS_DETAILS_PATH)
     except Exception as e:
-        print(f"BusDetails seed error: {e}")
+        logger.error("BusDetails seed error: %s", e)
 
 
 def _warm_bus_route_cache():
@@ -498,9 +554,9 @@ def _warm_bus_route_cache():
     try:
         rows = BusDetails.query.all()
         BUS_ROUTE_CACHE = {r.bus_no: r.bus_route for r in rows}
-        print(f"Bus route cache warmed: {len(BUS_ROUTE_CACHE)} entries from DB.")
+        logger.info("Bus route cache warmed: %d entries from DB.", len(BUS_ROUTE_CACHE))
     except Exception as e:
-        print(f"Cache warm from DB failed: {e}")
+        logger.error("Cache warm from DB failed: %s", e)
 
 
 def get_bus_route(bus_no) -> str | None:
@@ -530,7 +586,7 @@ def get_bus_route(bus_no) -> str | None:
             BUS_ROUTE_CACHE[bus_no] = record.bus_route   # populate cache on miss
             return record.bus_route
     except Exception as e:
-        print(f"BusDetails DB lookup error: {e}")
+        logger.warning("BusDetails DB lookup error: %s", e)
 
     return None
 
@@ -552,9 +608,9 @@ def _seed_db_from_excel():
             if phone and not AuthorizedDriver.query.filter_by(phone=phone).first():
                 db.session.add(AuthorizedDriver(phone=phone, name=name))
         db.session.commit()
-        print("Seeded AuthorizedDriver table from Excel.")
+        logger.info("Seeded AuthorizedDriver table from Excel.")
     except Exception as e:
-        print("Excel seed error:", e)
+        logger.error("Excel seed error: %s", e)
 
 
 def load_drivers():
@@ -577,9 +633,9 @@ def load_drivers():
             df = pd.read_excel(EXCEL_PATH)
             AUTHORIZED_DRIVERS = set(df["phone"].astype(str).apply(_normalize_phone))
         except Exception as e:
-            print("Excel load error:", e)
+            logger.error("Excel load error: %s", e)
 
-    print(f"[{source.upper()}] Authorized drivers loaded: {AUTHORIZED_DRIVERS}")
+    logger.info("[%s] Authorized drivers loaded: %s", source.upper(), AUTHORIZED_DRIVERS)
 
 
 with app.app_context():
@@ -996,13 +1052,18 @@ def search_routes():
         for rno, area in BUS_ROUTE_CACHE.items()
     }
 
-    # Overlay live bus data from DB so active buses reflect any runtime changes
+    # Overlay live bus data from DB — Change 7: with_entities fetches only
+    # the four columns we need, avoiding loading lat/lng/id into Python memory.
     try:
-        live_buses = BusLocation.query.all()
+        live_buses = BusLocation.query.with_entities(
+            BusLocation.route,
+            BusLocation.bus_route,
+            BusLocation.timestamp,
+            BusLocation.active,
+        ).all()
         active_route_nos = set()
         for bus in live_buses:
             rno = str(bus.route).upper()
-            # Include route area from live data if it exists
             if bus.bus_route:
                 all_routes[rno] = bus.bus_route
             elif rno not in all_routes:
@@ -1010,7 +1071,7 @@ def search_routes():
             if is_bus_active(bus.timestamp) and bool(bus.active):
                 active_route_nos.add(rno)
     except Exception as e:
-        print(f"[search_routes] live bus query error (non-fatal): {e}")
+        logger.warning("[search_routes] live bus query error (non-fatal): %s", e)
         active_route_nos = set()
 
     # ── Filter by query ──
@@ -1255,7 +1316,20 @@ def logout():
 # SEND OTP
 # ─────────────────────────────────────────────
 
+def _rate_limit(limit_str):
+    """
+    Decorator factory that applies a flask-limiter rate limit when available,
+    and is a silent no-op when flask-limiter is not installed.
+    """
+    def decorator(f):
+        if limiter:
+            return limiter.limit(limit_str)(f)
+        return f
+    return decorator
+
+
 @app.route("/send_otp", methods=["POST"])
+@_rate_limit("5 per minute")
 def send_otp():
     try:
         data  = request.get_json(silent=True) or {}
@@ -1280,7 +1354,7 @@ def send_otp():
         return jsonify({"msg": "OTP generated", "otp": otp})
 
     except Exception as e:
-        print("OTP ERROR:", e)
+        logger.error("OTP ERROR: %s", e)
         return jsonify({"error": "OTP failed"}), 500
 
 
@@ -1295,7 +1369,7 @@ def location():
         required = ("route", "busType", "lat", "lng")
 
         if not all(k in data for k in required):
-            print(f"[location] REJECTED — missing fields. Got keys: {list(data.keys())}")
+            logger.warning("[location] REJECTED — missing fields. Got keys: %s", list(data.keys()))
             return jsonify({"error": "Invalid data"}), 400
 
         # Normalise route: strip + uppercase (consistent with student-side comparison)
@@ -1306,12 +1380,12 @@ def location():
         lng       = data["lng"]
         now       = datetime.utcnow()
 
-        print(
-            f"[location] RECEIVED — route={route!r} type={bus_type!r} "
-            f"lat={lat} lng={lng} utcnow={now.isoformat()}"
-        )
+        logger.info("[location] RECEIVED — route=%r type=%r lat=%s lng=%s utcnow=%s", route, bus_type, lat, lng, now.isoformat())
 
-        bus = BusLocation.query.filter_by(route=route).first()
+        # Change 11: with_for_update() prevents a race condition when two GPS
+        # pings for the same route arrive simultaneously — the second query
+        # waits for the first transaction to commit before reading the row.
+        bus = BusLocation.query.filter_by(route=route).with_for_update().first()
 
         if bus:
             bus.lat       = lat
@@ -1320,7 +1394,7 @@ def location():
             bus.bus_route = bus_route
             bus.timestamp = now
             bus.active    = True
-            print(f"[location] UPDATING existing row id={bus.id} route={route!r}")
+            logger.info("[location] UPDATING existing row id=%s route=%r", bus.id, route)
         else:
             bus = BusLocation(
                 route=route, bus_type=bus_type,
@@ -1330,17 +1404,17 @@ def location():
                 active=True
             )
             db.session.add(bus)
-            print(f"[location] INSERTING new row route={route!r}")
+            logger.info("[location] INSERTING new row route=%r", route)
 
         db.session.commit()
         # Invalidate the bus_locations cache so the next student poll
         # fetches the fresh position from DB rather than stale cached data.
         _cache_delete(_BUS_LOCATIONS_KEY)
-        print(f"[location] COMMITTED — route={route!r} active=True timestamp={now.isoformat()}")
+        logger.info("[location] COMMITTED — route=%r active=True timestamp=%s", route, now.isoformat())
         return jsonify({"status": "ok", "route": route, "timestamp": now.isoformat()})
 
     except Exception as e:
-        print(f"[location] ERROR: {e}")
+        logger.error("[location] ERROR: %s", e, exc_info=True)
         import traceback; traceback.print_exc()
         db.session.rollback()
         return jsonify({"error": "location failed"}), 500
@@ -1370,7 +1444,7 @@ def _cache_get(key: str):
         raw = redis_client.get(key)
         return _json.loads(raw) if raw else None
     except Exception as e:
-        print(f"[redis] GET '{key}' error (non-fatal): {e}")
+        logger.warning("[redis] GET '%s' error (non-fatal): %s", key, e)
         return None
 
 
@@ -1384,7 +1458,7 @@ def _cache_set(key: str, value, ttl: int):
     try:
         redis_client.setex(key, ttl, _json.dumps(value))
     except Exception as e:
-        print(f"[redis] SET '{key}' error (non-fatal): {e}")
+        logger.warning("[redis] SET '%s' error (non-fatal): %s", key, e)
 
 
 def _cache_delete(key: str):
@@ -1396,9 +1470,9 @@ def _cache_delete(key: str):
         return
     try:
         redis_client.delete(key)
-        print(f"[redis] invalidated '{key}'")
+        logger.debug("[redis] invalidated '%s'", key)
     except Exception as e:
-        print(f"[redis] DELETE '{key}' error (non-fatal): {e}")
+        logger.warning("[redis] DELETE '%s' error (non-fatal): %s", key, e)
 
 
 # ─────────────────────────────────────────────
@@ -1419,31 +1493,33 @@ def get_locations():
     Activity is determined SOLELY by is_bus_active(bus.timestamp).
     The DB `active` flag is NOT used in the activity calculation here.
     """
-    print("[get_locations] ── endpoint hit ──")
+    logger.debug("[get_locations] ── endpoint hit ──")
 
     # ── Cache read ──
     cached = _cache_get(_BUS_LOCATIONS_KEY)
     if cached is not None:
-        print(f"[get_locations] cache HIT — returning {len(cached)} record(s)")
+        logger.debug("[get_locations] cache HIT — returning %d record(s)", len(cached))
         return jsonify(cached)
 
-    print("[get_locations] cache MISS — querying DB")
+    logger.debug("[get_locations] cache MISS — querying DB")
 
     try:
-        buses  = BusLocation.query.all()
+        # Change 3: filter by cutoff timestamp so ended/old buses that
+        # haven't been updated in far longer than the threshold are excluded
+        # from the query entirely, reducing per-row work at the Python level.
+        cutoff = datetime.utcnow() - timedelta(seconds=INACTIVITY_THRESHOLD_SECONDS + 60)
+        buses  = BusLocation.query.filter(BusLocation.timestamp >= cutoff).all()
         result = []
 
-        print(f"[get_locations] {len(buses)} row(s) in bus_location table")
+        logger.debug("[get_locations] %d row(s) within active window", len(buses))
 
         for bus in buses:
             try:
                 active = is_bus_active(bus.timestamp)
 
-                print(
-                    f"[get_locations] route={bus.route!r} "
-                    f"db_active={bus.active} "
-                    f"timestamp={bus.timestamp!r} "
-                    f"computed_active={active}"
+                logger.debug(
+                    "[get_locations] route=%r db_active=%s timestamp=%r computed_active=%s",
+                    bus.route, bus.active, bus.timestamp, active
                 )
 
                 result.append({
@@ -1459,20 +1535,39 @@ def get_locations():
                 })
 
             except Exception as row_err:
-                print(f"[get_locations] ERROR on row id={bus.id}: {row_err}")
-                import traceback; traceback.print_exc()
+                logger.error("[get_locations] ERROR on row id=%s: %s", bus.id, row_err, exc_info=True)
                 continue
 
         # ── Cache write ──
         _cache_set(_BUS_LOCATIONS_KEY, result, _BUS_LOCATIONS_TTL)
 
-        print(f"[get_locations] returning {len(result)} record(s) (stored in cache)")
+        logger.info("[get_locations] returning %d record(s) (stored in cache)", len(result))
         return jsonify(result)
 
     except Exception as e:
-        print(f"[get_locations] FATAL ERROR: {e}")
-        import traceback; traceback.print_exc()
+        logger.error("[get_locations] FATAL ERROR: %s", e, exc_info=True)
         return jsonify([]), 200
+
+
+# Change 12: versioned alias — same view function, both URLs work
+# Clients can migrate to /api/v1/get_locations at their own pace.
+app.add_url_rule("/api/v1/get_locations", endpoint="get_locations_v1", view_func=get_locations)
+
+
+# ─────────────────────────────────────────────
+# HEALTH CHECK  (Change 10)
+# ─────────────────────────────────────────────
+
+@app.route("/health")
+def health():
+    """
+    GET /health
+
+    Returns {"status": "ok"} when the app is reachable.
+    Used by Render health checks, load balancers, and monitoring.
+    Does NOT query the DB — a shallow liveness probe only.
+    """
+    return jsonify({"status": "ok"})
 
 
 # ─────────────────────────────────────────────
@@ -1484,29 +1579,22 @@ def end_trip():
     data  = request.get_json(silent=True) or {}
     route = _normalize_route(data.get("route", ""))
 
-    print(f"[end_trip] route={route!r}")
+    logger.info("[end_trip] route=%r", route)
 
     if not route:
         return jsonify({"error": "route is required"}), 400
 
     bus = BusLocation.query.filter_by(route=route).first()
     if bus:
-        # Rewind the timestamp far enough past INACTIVITY_THRESHOLD_SECONDS so
-        # is_bus_active(bus.timestamp) returns False on the very next student poll.
-        # This keeps /end_trip consistent with the timestamp-only activity model.
         bus.timestamp = datetime.utcnow() - timedelta(seconds=INACTIVITY_THRESHOLD_SECONDS + 10)
         bus.active    = False
         bus.lat       = None
         bus.lng       = None
         db.session.commit()
-        # Invalidate cache so students immediately see the bus as inactive
         _cache_delete(_BUS_LOCATIONS_KEY)
-        print(
-            f"[end_trip] route={route!r} — timestamp rewound, active=False, "
-            f"lat/lng cleared"
-        )
+        logger.info("[end_trip] route=%r — timestamp rewound, active=False, lat/lng cleared", route)
     else:
-        print(f"[end_trip] route={route!r} not found in DB — nothing to update")
+        logger.info("[end_trip] route=%r not found in DB — nothing to update", route)
 
     return jsonify({"status": "trip ended"})
 
@@ -1550,10 +1638,10 @@ def onboard():
             db.session.add(record)
 
         db.session.commit()
-        print(f"[onboard] roll={roll_no} route={bus_route} onboard={is_onboard}")
+        logger.info("[onboard] roll=%s route=%s onboard=%s", roll_no, bus_route, is_onboard)
         return jsonify({"status": "ok"})
 
     except Exception as e:
-        print(f"[onboard] ERROR: {e}")
+        logger.error("[onboard] ERROR: %s", e)
         db.session.rollback()
         return jsonify({"error": "onboard update failed"}), 500
