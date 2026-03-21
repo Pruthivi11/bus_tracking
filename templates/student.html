@@ -130,15 +130,15 @@
           </div>
         </div>
 
-        <!-- EVENING — DESTINATION & REMINDERS -->
+        <!-- EVENING — DESTINATION & PROXIMITY ALERTS -->
         <div class="card-section" id="destinationBlock">
           <div class="section-title">
-            <i class="fa-solid fa-map-pin"></i> Destination &amp; Reminders
+            <i class="fa-solid fa-map-pin"></i> Destination &amp; Proximity Alerts
           </div>
 
           <div class="dest-hint">
             <i class="fa-solid fa-lightbulb"></i>
-            <span>Tap <strong>Show Live Map</strong> first, then tap the map to pin your stop. Reminders trigger as the bus approaches.</span>
+            <span>Tap <strong>Show Live Map</strong> first, then tap the map to pin your stop. Alerts fire as the bus approaches.</span>
           </div>
 
           <button id="selectDestination" class="btn-dest">
@@ -146,31 +146,48 @@
             Select Stop on Map
           </button>
 
-          <div id="reminderBox">
-            <div class="reminder-title">
-              <i class="fa-solid fa-bell"></i>&nbsp; Alert me when bus is
+          <!--
+            Proximity alert distance picker.
+            Shown after the student pins a destination on the map.
+            Tap chips to select up to 3 distance thresholds.
+            JS class states: .prox-selected (active), .prox-fired (alert sent).
+            Controlled entirely by student.js — no inline styles.
+          -->
+          <div id="proximityBox" class="prox-box">
+
+            <div class="prox-header">
+              <span class="prox-title">
+                <i class="fa-solid fa-bell"></i>
+                Proximity Alert Distance
+              </span>
+              <span class="prox-limit-hint" id="proxLimitHint">Select up to 3</span>
             </div>
-            <div class="reminder-options">
-              <div class="reminder-chip">
-                <input type="checkbox" id="rem2km">
-                <label for="rem2km">
-                  <span class="dist-num">2</span>km away
-                </label>
-              </div>
-              <div class="reminder-chip">
-                <input type="checkbox" id="rem1km">
-                <label for="rem1km">
-                  <span class="dist-num">1</span>km away
-                </label>
-              </div>
-              <div class="reminder-chip">
-                <input type="checkbox" id="rem500m">
-                <label for="rem500m">
-                  <span class="dist-num">500</span>m away
-                </label>
-              </div>
+
+            <div class="prox-options" role="group" aria-label="Proximity alert distances">
+              <button class="prox-chip" data-metres="100"  type="button">
+                <span class="prox-chip-dist">100</span>
+                <span class="prox-chip-unit">m</span>
+              </button>
+              <button class="prox-chip" data-metres="250"  type="button">
+                <span class="prox-chip-dist">250</span>
+                <span class="prox-chip-unit">m</span>
+              </button>
+              <button class="prox-chip" data-metres="500"  type="button">
+                <span class="prox-chip-dist">500</span>
+                <span class="prox-chip-unit">m</span>
+              </button>
+              <button class="prox-chip" data-metres="1000" type="button">
+                <span class="prox-chip-dist">1</span>
+                <span class="prox-chip-unit">km</span>
+              </button>
+              <button class="prox-chip" data-metres="2000" type="button">
+                <span class="prox-chip-dist">2</span>
+                <span class="prox-chip-unit">km</span>
+              </button>
             </div>
-          </div>
+
+          </div><!-- /proximityBox -->
+
         </div>
 
         <!-- ACTION -->
@@ -277,11 +294,18 @@
       }, 100);
     });
 
-    // Show reminder box after destination button is tapped
+    // Show proximity box after destination button is tapped
     document.getElementById('selectDestination').addEventListener('click', () => {
-      document.getElementById('reminderBox').classList.add('visible');
+      document.getElementById('proximityBox').classList.add('visible');
     });
   </script>
+
+  <!--
+    Proximity alert toast — shown when bus crosses a selected distance threshold.
+    Positioned fixed at bottom of viewport; managed entirely by student.js.
+    Visible via .prox-toast-visible class (no inline styles).
+  -->
+  <div id="proximityToast" class="prox-toast" role="alert" aria-live="assertive"></div>
 
 </body>
 </html>

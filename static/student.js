@@ -32,7 +32,7 @@ let lastBusPosition  = {};
 let destination      = null;
 let tripMode         = "morning";
 
-let reminders = { km2: false, km1: false, m500: false };
+let reminders = {};   // legacy — kept so no reference errors; logic replaced by proximityAlerts
 
 
 // ─────────────────────────────────────────────
@@ -47,10 +47,9 @@ const showBtn          = document.getElementById("showMap");
 const mapEl            = document.getElementById("map");
 const selectDestBtn    = document.getElementById("selectDestination");
 const destinationBlock = document.getElementById("destinationBlock");
-const reminderBox      = document.getElementById("reminderBox");
-const rem2km           = document.getElementById("rem2km");
-const rem1km           = document.getElementById("rem1km");
-const rem500m          = document.getElementById("rem500m");
+const proximityBox     = document.getElementById("proximityBox");
+const proxLimitHint    = document.getElementById("proxLimitHint");
+const proximityToast   = document.getElementById("proximityToast");
 
 
 // ─────────────────────────────────────────────
@@ -84,9 +83,128 @@ selectDestBtn?.addEventListener("click", () => {
   alert("Click on map to select destination");
 });
 
-rem2km?.addEventListener("change",  () => { reminders.km2  = rem2km.checked;  });
-rem1km?.addEventListener("change",  () => { reminders.km1  = rem1km.checked;  });
-rem500m?.addEventListener("change", () => { reminders.m500 = rem500m.checked; });
+
+// ═══════════════════════════════════════════════════════════════════
+// PROXIMITY ALERTS  (Evening mode only)
+//
+// Students select up to 3 distance thresholds from a chip grid.
+// When the bus crosses a threshold, a non-blocking in-page toast
+// is shown once per threshold per destination pin.
+//
+// selectedDistances  — Set of metres (numbers) currently selected
+// firedDistances     — Set of metres already alerted this session;
+//                      cleared when the destination pin moves
+// MAX_SELECTIONS     — max chips that can be selected at once
+// ═══════════════════════════════════════════════════════════════════
+
+const MAX_PROX_SELECTIONS = 3;
+
+/** metres currently active as alert thresholds */
+const selectedDistances = new Set();
+
+/** metres for which an alert has already been shown this destination */
+const firedDistances = new Set();
+
+
+/**
+ * Toggle a distance chip on/off.
+ * Enforces MAX_PROX_SELECTIONS — if limit is reached, deselect another first.
+ *
+ * @param {number} metres
+ * @param {HTMLElement} chipEl
+ */
+function toggleDistance(metres, chipEl) {
+  if (selectedDistances.has(metres)) {
+    // Deselect
+    selectedDistances.delete(metres);
+    chipEl.classList.remove("prox-selected");
+    chipEl.setAttribute("aria-pressed", "false");
+  } else {
+    if (selectedDistances.size >= MAX_PROX_SELECTIONS) {
+      // Max reached — flash the hint and bail
+      proxLimitHint.classList.add("prox-limit-flash");
+      setTimeout(() => proxLimitHint.classList.remove("prox-limit-flash"), 600);
+      return;
+    }
+    selectedDistances.add(metres);
+    chipEl.classList.add("prox-selected");
+    chipEl.setAttribute("aria-pressed", "true");
+  }
+
+  // Update count hint
+  const remaining = MAX_PROX_SELECTIONS - selectedDistances.size;
+  if (selectedDistances.size === 0) {
+    proxLimitHint.textContent = "Select up to 3";
+  } else if (remaining === 0) {
+    proxLimitHint.textContent = "Max selected";
+    proxLimitHint.classList.add("prox-limit-reached");
+  } else {
+    proxLimitHint.textContent = `${remaining} more`;
+    proxLimitHint.classList.remove("prox-limit-reached");
+  }
+}
+
+// Wire up all proximity chips
+document.querySelectorAll(".prox-chip").forEach(chip => {
+  const metres = parseInt(chip.dataset.metres, 10);
+  chip.setAttribute("aria-pressed", "false");
+
+  chip.addEventListener("click", () => toggleDistance(metres, chip));
+});
+
+/**
+ * Called by initMap when the driver pins a new destination.
+ * Resets firedDistances so alerts can fire again for the new stop.
+ */
+function resetProximityFired() {
+  firedDistances.clear();
+}
+
+/**
+ * Show a non-blocking proximity toast for `seconds` then hide it.
+ * Multiple calls queue properly — a new alert extends the timer.
+ *
+ * @param {string}  message
+ * @param {number}  [seconds=5]
+ */
+let _toastTimer = null;
+function showProximityToast(message, seconds = 5) {
+  clearTimeout(_toastTimer);
+  proximityToast.textContent = message;
+  proximityToast.classList.add("prox-toast-visible");
+  _toastTimer = setTimeout(() => {
+    proximityToast.classList.remove("prox-toast-visible");
+  }, seconds * 1000);
+}
+
+/**
+ * Check if the bus has crossed any selected proximity threshold.
+ * Called from loadBusLocations() in evening mode when bus is active.
+ *
+ * @param {{ lat: number, lng: number }} bus
+ */
+function checkProximityAlerts(bus) {
+  if (!destination || selectedDistances.size === 0) return;
+  if (bus.lat == null || bus.lng == null) return;
+
+  const dist = getDistance(bus.lat, bus.lng, destination.lat, destination.lng);
+
+  // Sort thresholds descending so the largest un-fired one triggers first
+  const sorted = Array.from(selectedDistances).sort((a, b) => b - a);
+
+  for (const threshold of sorted) {
+    if (dist <= threshold && !firedDistances.has(threshold)) {
+      firedDistances.add(threshold);
+
+      const label = threshold >= 1000
+        ? `${threshold / 1000} km`
+        : `${threshold} m`;
+
+      showProximityToast(`🔔 Bus is within ${label} of your stop!`);
+      console.log(`[proximity] alert fired: ${label} (dist=${dist.toFixed(0)}m)`);
+    }
+  }
+}
 
 
 // ─────────────────────────────────────────────
@@ -359,7 +477,10 @@ function initMap(center) {
       .setLngLat([lng, lat])
       .addTo(map);
 
-    document.getElementById("reminderBox").classList.add("visible");
+    // New destination pin — reset fired alerts so thresholds trigger again
+    resetProximityFired();
+
+    document.getElementById("proximityBox").classList.add("visible");
   });
 }
 
@@ -440,23 +561,7 @@ function animateMarker(route, newLat, newLng) {
 // ─────────────────────────────────────────────
 // EVENING REMINDER ALERTS
 // ─────────────────────────────────────────────
-function checkDestinationReminder(bus) {
-  if (!destination) return;
-  const dist = getDistance(bus.lat, bus.lng, destination.lat, destination.lng);
-
-  if (reminders.km2 && dist <= 2000) {
-    alert("Bus is 2 km from your stop");
-    reminders.km2 = false;
-  }
-  if (reminders.km1 && dist <= 1000) {
-    alert("Bus is 1 km from your stop");
-    reminders.km1 = false;
-  }
-  if (reminders.m500 && dist <= 500) {
-    alert("Bus is 500 m from your stop");
-    reminders.m500 = false;
-  }
-}
+// checkDestinationReminder replaced by checkProximityAlerts() above
 
 
 // ─────────────────────────────────────────────
@@ -551,7 +656,7 @@ async function loadBusLocations(studentLat, studentLng) {
 
   if (!isOnboard) updateBusStatus(matchingBus, busNo);
 
-  if (tripMode === "evening") checkDestinationReminder(matchingBus);
+  if (tripMode === "evening") checkProximityAlerts(matchingBus);
 
   // ── Onboard detection (morning mode) ──
   if (

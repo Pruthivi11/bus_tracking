@@ -2423,6 +2423,22 @@ body.page-admin main {
   margin-bottom: 0;
 }
 
+/* ── Allow the dropdown to escape the card boundary ──────────────────
+   .student-card has overflow:hidden for its border-radius clipping effect,
+   but that clips the absolutely-positioned dropdown at the card edge.
+   We override it here (page-student scope only) so the dropdown can
+   expand beyond the card without affecting any other page using .student-card.
+   The visual border-radius is preserved because overflow:visible is only
+   applied when the card contains a search field that needs the escape hatch.
+──────────────────────────────────────────────────────────────────────── */
+body.page-student .student-card {
+  overflow: visible;
+}
+
+body.page-student .student-card .card-section {
+  overflow: visible;
+}
+
 /* ── Search input — inherits .form-input base styles ── */
 .student-search-input {
   width: 100%;
@@ -2493,18 +2509,21 @@ body.page-admin main {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 300;
+  /* High z-index overlays all parent containers regardless of stacking context */
+  z-index: 9999;
   background: var(--white);
   border: 1.5px solid var(--blue-light);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
+  /* overflow:hidden removed — it conflicted with overflow-y:auto
+     and reinforced the parent clip. Only the y-scroll rule is needed. */
+  overflow-y: auto;
   list-style: none;
   margin: 0;
   padding: 4px 0;
   animation: fadeUp 0.15s ease both;
-  max-height: 280px;
-  overflow-y: auto;
+  /* Tall enough to show 5–6 items without scrolling */
+  max-height: 320px;
   /* Smooth momentum scroll on iOS */
   -webkit-overflow-scrolling: touch;
 }
@@ -2621,3 +2640,166 @@ body.page-admin main {
 
 /* ── Hidden route number field (holds resolved route_no for tracking) ── */
 .student-busno-hidden { display: none; }
+
+
+/* ============================================================
+   20. PROXIMITY ALERT DISTANCE PICKER  (Evening mode only)
+   ============================================================ */
+
+/* ── Container ── */
+#proximityBox {
+  display: none;
+  margin-top: 14px;
+  animation: fadeUp 0.3s ease both;
+}
+
+#proximityBox.visible { display: block; }
+
+/* ── Header row: label + count hint ── */
+.prox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.prox-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-400);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Selection count hint (right side of header) ── */
+.prox-limit-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.prox-limit-hint.prox-limit-reached {
+  color: #d97706;
+}
+
+/* Brief pulse when limit is hit and user tries to select another */
+.prox-limit-hint.prox-limit-flash {
+  animation: proxFlash 0.6s ease both;
+}
+
+@keyframes proxFlash {
+  0%   { transform: scale(1);    color: var(--gray-400); }
+  30%  { transform: scale(1.12); color: #ef4444; }
+  100% { transform: scale(1);    color: #d97706; }
+}
+
+/* ── 5-chip grid ── */
+.prox-options {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+/* ── Individual chip ── */
+.prox-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 4px;
+  min-height: 56px;
+  background: var(--gray-50);
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  touch-action: manipulation;
+  /* No outline on tap — we use the border colour change */
+  outline: none;
+}
+
+.prox-chip:active {
+  transform: scale(0.94);
+}
+
+/* ── Chip text ── */
+.prox-chip-dist {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gray-800);
+  line-height: 1;
+}
+
+.prox-chip-unit {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Selected state ── */
+.prox-chip.prox-selected {
+  border-color: #d97706;
+  background: #fff8e1;
+}
+
+.prox-chip.prox-selected .prox-chip-dist {
+  color: #b45309;
+}
+
+.prox-chip.prox-selected .prox-chip-unit {
+  color: #d97706;
+}
+
+/* ── Fired (alert already sent for this threshold) ── */
+.prox-chip.prox-fired {
+  border-color: #6ee7b7;
+  background: #d1fae5;
+  opacity: 0.7;
+}
+
+.prox-chip.prox-fired .prox-chip-dist,
+.prox-chip.prox-fired .prox-chip-unit {
+  color: #065f46;
+}
+
+/* ── Proximity alert toast ── */
+.prox-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--navy);
+  color: white;
+  padding: 13px 22px;
+  border-radius: 50px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.prox-toast.prox-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Responsive: narrower gap on very small screens ── */
+@media (max-width: 340px) {
+  .prox-options { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  .prox-chip    { padding: 8px 2px; min-height: 50px; }
+  .prox-chip-dist { font-size: 14px; }
+}
