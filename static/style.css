@@ -2221,3 +2221,83 @@ body.page-admin main {
   .btn-add-driver:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,0.4); }
   .btn-page:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); background: var(--blue-pale); }
 }
+
+
+/* ============================================================
+   16. DRIVER ROUTE SPLIT INPUT + RECOMMENDATION UI
+   ============================================================ */
+
+/* ── Route recommendation badge (shown below Route Area input) ── */
+.route-suggestion {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--blue-pale);
+  border: 1px solid var(--blue-light);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--blue);
+  animation: fadeUp 0.25s ease both;
+}
+
+.route-suggestion.visible { display: flex; }
+
+.route-suggestion-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+.route-suggestion-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--blue-light);
+  white-space: nowrap;
+}
+
+/* ── Route area input — modified state (driver overrode suggestion) ── */
+.form-input.route-modified {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.form-input.route-modified:focus {
+  border-color: #d97706;
+  box-shadow: 0 0 0 3px rgba(217,119,6,0.1);
+}
+
+/* ── Route fetch loading spinner (tiny, inline) ── */
+.route-loading-indicator {
+  display: none;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--gray-200);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.route-loading-indicator.visible { display: block; }
+
+/* ── No-match hint (when bus_no not found in Excel) ── */
+.route-no-match {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 7px 12px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: #78350f;
+}
+
+.route-no-match.visible { display: flex; }

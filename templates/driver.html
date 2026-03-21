@@ -57,13 +57,73 @@
             <span>GPS activates automatically when you start the trip</span>
           </div>
 
-          <!-- ROUTE -->
+          <!-- ── ROUTE NUMBER ──────────────────────────────────────
+               Driver enters the bus number here (e.g. "12").
+               On input, /get-route is called and #routeArea is
+               auto-filled with the matching route from bus_details.xlsx.
+          ─────────────────────────────────────────────────────── -->
           <div class="form-group">
-            <label class="form-label" for="route">Route Number</label>
+            <label class="form-label" for="routeNo">Route Number</label>
             <div class="input-wrap">
-              <i class="fa-solid fa-route input-icon"></i>
-              <input id="route" class="form-input" placeholder="e.g. Route 12"
-                     autocomplete="off" inputmode="text">
+              <i class="fa-solid fa-hashtag input-icon"></i>
+              <input
+                id="routeNo"
+                class="form-input"
+                type="text"
+                inputmode="numeric"
+                placeholder="e.g. 12"
+                autocomplete="off"
+                maxlength="10"
+              >
+              <!--
+                Tiny spinner shown while /get-route is fetching.
+                Controlled by .visible class via driver.js.
+              -->
+              <span
+                id="routeLoadingIcon"
+                class="route-loading-indicator"
+                aria-hidden="true"
+              ></span>
+            </div>
+          </div>
+
+          <!-- ── ROUTE AREA ─────────────────────────────────────────
+               Auto-filled from Excel recommendation.
+               Driver can freely edit to override — this is intentional.
+               .route-modified class (amber border) signals an override.
+          ─────────────────────────────────────────────────────── -->
+          <div class="form-group">
+            <label class="form-label" for="routeArea">Route Area</label>
+            <div class="input-wrap">
+              <i class="fa-solid fa-map-location-dot input-icon"></i>
+              <input
+                id="routeArea"
+                class="form-input"
+                type="text"
+                placeholder="e.g. Velachery (auto-filled or type manually)"
+                autocomplete="off"
+              >
+            </div>
+
+            <!--
+              Suggestion badge — visible when a match is found in Excel.
+              Clicking it re-accepts the suggestion (resets any override).
+              Controlled by .visible class via driver.js.
+            -->
+            <div id="routeSuggestion" class="route-suggestion" role="status" aria-live="polite">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span class="route-suggestion-text" id="suggestionText"></span>
+              <span class="route-suggestion-label">Suggested · tap to accept</span>
+            </div>
+
+            <!--
+              No-match hint — visible when bus_no is not in Excel.
+              Driver can still type a route area manually.
+              Controlled by .visible class via driver.js.
+            -->
+            <div id="routeNoMatch" class="route-no-match" role="status" aria-live="polite">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>No preset route for this number — type the area manually.</span>
             </div>
           </div>
 
@@ -83,7 +143,7 @@
 
           <div class="divider"></div>
 
-          <!-- TRIP CONTROLS — stacked on mobile, side-by-side on wider screens -->
+          <!-- TRIP CONTROLS -->
           <div class="btn-row">
             <button id="startBtn" class="btn-start" onclick="startTrip()">
               <i class="fa-solid fa-play"></i> Start Trip
@@ -107,10 +167,10 @@
 
   <script src="/static/driver.js"></script>
 
-  <!-- Override setStatus to use the styled banner -->
+  <!-- Override setStatus to drive the styled status banner -->
   <script>
   function setStatus(text, color) {
-    const banner  = document.getElementById("tripStatus");
+    const banner   = document.getElementById("tripStatus");
     const liveText = banner.querySelector(".status-text-row");
     const subText  = banner.querySelector(".status-sub-text");
 
@@ -118,15 +178,15 @@
 
     if (color === "#09f443" || color === "green") {
       banner.classList.add("active");
-      liveText.innerHTML = 'TRIP ACTIVE <span class="live-dot"></span>';
+      liveText.innerHTML  = 'TRIP ACTIVE <span class="live-dot"></span>';
       subText.textContent = "Broadcasting live location to students";
     } else if (color === "#dc3545" || color === "red") {
       banner.classList.add("ended");
-      liveText.innerHTML = "TRIP ENDED";
+      liveText.innerHTML  = "TRIP ENDED";
       subText.textContent = "Trip has been stopped. GPS cleared.";
     } else {
       banner.classList.add("idle");
-      liveText.innerHTML = text;
+      liveText.innerHTML  = text;
       subText.textContent = "Set route and start tracking";
     }
   }

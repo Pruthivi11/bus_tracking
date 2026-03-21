@@ -29,9 +29,34 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db   = SQLAlchemy(app)
 CORS(app)
 
-MAPBOX_KEY     = os.environ.get("MAPBOX_KEY")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin@123")
-EXCEL_PATH     = "drivers.xlsx"
+MAPBOX_KEY          = os.environ.get("MAPBOX_KEY")
+ADMIN_PASSWORD      = os.environ.get("ADMIN_PASSWORD", "admin@123")
+EXCEL_PATH          = "drivers.xlsx"
+BUS_DETAILS_PATH    = "bus_details.xlsx"
+
+# ─────────────────────────────────────────────
+# BUS ROUTE LOOKUP  (in-memory from bus_details.xlsx)
+#
+# Loaded once at startup; refreshed by load_bus_details().
+# Maps bus_no (str) → bus_route (str), e.g. {"12": "Velachery"}
+# Gracefully empty if the file doesn't exist.
+# ─────────────────────────────────────────────
+
+BUS_ROUTE_MAP: dict = {}
+
+def load_bus_details():
+    """Load bus_no → bus_route mapping from bus_details.xlsx into memory."""
+    global BUS_ROUTE_MAP
+    try:
+        df = pd.read_excel(BUS_DETAILS_PATH)
+        df["bus_no"]    = df["bus_no"].astype(str).str.strip()
+        df["bus_route"] = df["bus_route"].astype(str).str.strip()
+        BUS_ROUTE_MAP   = dict(zip(df["bus_no"], df["bus_route"]))
+        print(f"Bus details loaded: {len(BUS_ROUTE_MAP)} routes from {BUS_DETAILS_PATH}")
+    except FileNotFoundError:
+        print(f"[INFO] {BUS_DETAILS_PATH} not found — route recommendation disabled.")
+    except Exception as e:
+        print(f"Bus details load error: {e}")
 
 
 # ─────────────────────────────────────────────
@@ -81,6 +106,7 @@ class BusLocation(db.Model):
     id        = db.Column(db.Integer, primary_key=True)
     route     = db.Column(db.String(20), unique=True, nullable=False, index=True)
     bus_type  = db.Column(db.String(20))
+    bus_route = db.Column(db.String(100), nullable=True)   # route area, e.g. "Velachery"
     lat       = db.Column(db.Float)
     lng       = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -159,6 +185,7 @@ def load_drivers():
 with app.app_context():
     db.create_all()
     load_drivers()
+    load_bus_details()
 
 
 # ─────────────────────────────────────────────
@@ -473,6 +500,34 @@ def admin_driver_source():
 
 
 # ─────────────────────────────────────────────
+# BUS ROUTE RECOMMENDATION
+# ─────────────────────────────────────────────
+
+@app.route("/get-route")
+def get_route():
+    """
+    GET /get-route?bus_no=12
+
+    Returns the recommended route area for a given bus number,
+    looked up from bus_details.xlsx (loaded into BUS_ROUTE_MAP at startup).
+
+    Response (found):    { "bus_no": "12", "bus_route": "Velachery", "found": true }
+    Response (not found):{ "bus_no": "99", "bus_route": "",          "found": false }
+    """
+    bus_no = str(request.args.get("bus_no", "")).strip()
+
+    if not bus_no:
+        return jsonify({"error": "bus_no is required"}), 400
+
+    route_area = BUS_ROUTE_MAP.get(bus_no, "")
+    return jsonify({
+        "bus_no":    bus_no,
+        "bus_route": route_area,
+        "found":     bool(route_area)
+    })
+
+
+# ─────────────────────────────────────────────
 # DRIVER LOGIN / PAGE / LOGOUT
 # ─────────────────────────────────────────────
 
@@ -573,18 +628,21 @@ def location():
         if not all(k in data for k in required):
             return jsonify({"error": "Invalid data"}), 400
 
-        route = data["route"]
-        bus   = BusLocation.query.filter_by(route=route).first()
+        route     = data["route"]
+        bus_route = data.get("busRoute", "")   # optional route area
+        bus       = BusLocation.query.filter_by(route=route).first()
 
         if bus:
             bus.lat       = data["lat"]
             bus.lng       = data["lng"]
             bus.bus_type  = data["busType"]
+            bus.bus_route = bus_route
             bus.timestamp = datetime.utcnow()
             bus.active    = True
         else:
             bus = BusLocation(
                 route=route, bus_type=data["busType"],
+                bus_route=bus_route,
                 lat=data["lat"], lng=data["lng"],
                 timestamp=datetime.utcnow(), active=True
             )
@@ -620,6 +678,7 @@ def get_locations():
         result.append({
             "route":    bus.route,
             "busType":  bus.bus_type,
+            "busRoute": bus.bus_route or "",
             "lat":      bus.lat,
             "lng":      bus.lng,
             "lastSeen": last_seen,
