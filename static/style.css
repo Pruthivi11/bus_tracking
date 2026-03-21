@@ -2301,3 +2301,34 @@ body.page-admin main {
 }
 
 .route-no-match.visible { display: flex; }
+
+
+/* ============================================================
+   17. BUS MARKER  (replaces inline styles in student.js)
+   ============================================================ */
+
+.bus-marker-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.bus-marker-bus-icon {
+  color: red;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.bus-marker-label {
+  font-size: 11px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--navy);
+  text-align: center;
+  background: white;
+  border-radius: 4px;
+  padding: 1px 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  white-space: nowrap;
+}

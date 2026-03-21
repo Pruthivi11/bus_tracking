@@ -41,13 +41,51 @@ app.config["SESSION_COOKIE_HTTPONLY"]  = True
 app.config["SESSION_COOKIE_SECURE"]   = True        # requires HTTPS in production
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-db   = SQLAlchemy(app)
-CORS(app)
+db = SQLAlchemy(app)
+
+# ─────────────────────────────────────────────
+# CORS
+#
+# FRONTEND_ORIGIN env var controls which origin is allowed.
+# Set it to your Render frontend URL in production, e.g.:
+#   FRONTEND_ORIGIN=https://commute-assistant.onrender.com
+#
+# Falls back to "*" (all origins) for local development.
+# supports_credentials must be False when origins="*";
+# set an explicit origin to enable credentials.
+# ─────────────────────────────────────────────
+
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
+
+_cors_kwargs = {
+    "resources":     {r"/*": {"origins": FRONTEND_ORIGIN}},
+    "methods":       ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"],
+}
+
+# credentials (cookies) can only be supported with a specific origin, not "*"
+if FRONTEND_ORIGIN != "*":
+    _cors_kwargs["supports_credentials"] = True
+
+CORS(app, **_cors_kwargs)
 
 MAPBOX_KEY       = os.environ.get("MAPBOX_KEY")
 ADMIN_PASSWORD   = os.environ.get("ADMIN_PASSWORD", "admin@123")
 EXCEL_PATH       = "drivers.xlsx"
 BUS_DETAILS_PATH = "bus_details.xlsx"   # seed source only — runtime data lives in DB
+
+# ─────────────────────────────────────────────
+# BACKEND URL
+#
+# Used by frontend JS to construct absolute API calls.
+# Set BACKEND_URL env var on Render to your service URL, e.g.:
+#   BACKEND_URL=https://commute-backend.onrender.com
+#
+# Falls back to empty string, which means relative URLs —
+# correct when frontend and backend are served from the same origin.
+# ─────────────────────────────────────────────
+
+BACKEND_URL = os.environ.get("BACKEND_URL", "")
 
 # ─────────────────────────────────────────────
 # BUS ROUTE CACHE  (cache-aside, backed by PostgreSQL)
@@ -471,7 +509,7 @@ def home():
 
 @app.route("/student")
 def student():
-    return render_template("student.html")
+    return render_template("student.html", backend_url=BACKEND_URL)
 
 
 # ─────────────────────────────────────────────
@@ -923,31 +961,61 @@ def location():
 
 @app.route("/get_locations")
 def get_locations():
-    buses  = BusLocation.query.all()
-    result = []
+    """
+    Returns all bus locations as JSON.
+    Always returns a valid JSON array — never crashes on bad data.
+    Logs every request to confirm it reaches the backend.
+    """
+    print("[get_locations] endpoint hit")
 
-    for bus in buses:
-        diff      = datetime.utcnow() - bus.timestamp
-        last_seen = int(diff.total_seconds())
+    try:
+        buses  = BusLocation.query.all()
+        result = []
 
-        if last_seen > 60:
-            if bus.active:
-                bus.active = False
-        else:
-            bus.active = True
+        for bus in buses:
+            try:
+                # Guard against None timestamp (can happen after manual DB edits)
+                if bus.timestamp is None:
+                    last_seen = 9999
+                else:
+                    diff      = datetime.utcnow() - bus.timestamp
+                    last_seen = int(diff.total_seconds())
 
-        result.append({
-            "route":    bus.route,
-            "busType":  bus.bus_type,
-            "busRoute": bus.bus_route or "",
-            "lat":      bus.lat,
-            "lng":      bus.lng,
-            "lastSeen": last_seen,
-            "active":   bus.active
-        })
+                if last_seen > 60:
+                    if bus.active:
+                        bus.active = False
+                else:
+                    bus.active = True
 
-    db.session.commit()
-    return jsonify(result)
+                result.append({
+                    "route":    bus.route,
+                    "busType":  bus.bus_type  or "",
+                    "busRoute": bus.bus_route or "",
+                    "lat":      bus.lat,
+                    "lng":      bus.lng,
+                    "lastSeen": last_seen,
+                    "active":   bus.active
+                })
+            except Exception as row_err:
+                # Skip one bad row rather than failing the whole response
+                print(f"[get_locations] skipping bus row {bus.id}: {row_err}")
+                continue
+
+        # Commit only if we actually changed any active flags
+        try:
+            db.session.commit()
+        except Exception as commit_err:
+            print(f"[get_locations] commit error (non-fatal): {commit_err}")
+            db.session.rollback()
+
+        print(f"[get_locations] returning {len(result)} bus(es)")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"[get_locations] ERROR: {e}")
+        db.session.rollback()
+        # Always return valid JSON so the frontend can handle it gracefully
+        return jsonify([]), 200
 
 
 # ─────────────────────────────────────────────
@@ -967,3 +1035,51 @@ def end_trip():
 
     db.session.commit()
     return jsonify({"status": "trip ended"})
+
+
+# ─────────────────────────────────────────────
+# ONBOARD STATUS
+# Called by student.js when proximity detection triggers.
+# Previously missing — caused silent 404 errors in the frontend.
+# ─────────────────────────────────────────────
+
+@app.route("/onboard", methods=["POST"])
+def onboard():
+    """
+    Records that a student has boarded a bus.
+    POST body: { rollNo, busRoute, onboard }
+    """
+    try:
+        data      = request.get_json(silent=True) or {}
+        roll_no   = str(data.get("rollNo",   "")).strip()
+        bus_route = str(data.get("busRoute", "")).strip()
+        is_onboard = bool(data.get("onboard", False))
+
+        if not roll_no or not bus_route:
+            return jsonify({"error": "rollNo and busRoute are required"}), 400
+
+        # Upsert: update existing record or create new one
+        record = Onboard.query.filter_by(
+            roll_no=roll_no, bus_route=bus_route
+        ).first()
+
+        if record:
+            record.onboard   = is_onboard
+            record.timestamp = datetime.utcnow()
+        else:
+            record = Onboard(
+                roll_no=roll_no,
+                bus_route=bus_route,
+                onboard=is_onboard,
+                timestamp=datetime.utcnow()
+            )
+            db.session.add(record)
+
+        db.session.commit()
+        print(f"[onboard] roll={roll_no} route={bus_route} onboard={is_onboard}")
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        print(f"[onboard] ERROR: {e}")
+        db.session.rollback()
+        return jsonify({"error": "onboard update failed"}), 500

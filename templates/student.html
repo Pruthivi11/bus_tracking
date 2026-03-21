@@ -141,6 +141,16 @@
 
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
+  <!--
+    BASE_URL is set by Flask from the BACKEND_URL env var.
+    Empty string = same-origin (frontend and backend on same Render service).
+    Set BACKEND_URL env var when frontend and backend are on different origins.
+    This must come before student.js so BASE_URL is defined when that script runs.
+  -->
+  <script>
+    window.BASE_URL = "{{ backend_url | default('') }}";
+  </script>
+
   <!-- Mode toggle visual state -->
   <script>
     const modeLabels = document.querySelectorAll('.mode-option');
