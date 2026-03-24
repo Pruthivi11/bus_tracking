@@ -1645,3 +1645,6 @@ def onboard():
         logger.error("[onboard] ERROR: %s", e)
         db.session.rollback()
         return jsonify({"error": "onboard update failed"}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

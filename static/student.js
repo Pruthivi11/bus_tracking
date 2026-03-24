@@ -240,6 +240,120 @@ function checkProximityAlerts(bus) {
 }
 
 
+// ═══════════════════════════════════════════════════════════════════
+// MORNING PICKUP ALERT  (Morning mode only)
+//
+// Mirrors the evening proximity system but measures bus-to-STUDENT
+// distance instead of bus-to-destination distance.
+//
+// Key differences from evening system:
+//   • No selection limit — all 5 chips can be active simultaneously
+//   • Alarm is gated by a toggle (morningAlarmEnabled)
+//   • morningFiredDistances cleared on route change AND session reset
+//   • Uses .morn-chip DOM class (independent of .prox-chip)
+// ═══════════════════════════════════════════════════════════════════
+
+/** Whether the student has enabled the pickup alarm */
+let morningAlarmEnabled = false;
+
+/** Threshold metres the student has selected for morning alerts */
+const morningSelectedDistances = new Set();
+
+/** Metres for which a morning alert has already fired this session */
+const morningFiredDistances = new Set();
+
+// ── Alarm toggle button ──
+const pickupAlarmBtn = document.getElementById("pickupAlarmToggle");
+const morningProxBox = document.getElementById("morningProxBox");
+const morningProxCount = document.getElementById("morningProxCount");
+
+pickupAlarmBtn?.addEventListener("click", () => {
+  morningAlarmEnabled = !morningAlarmEnabled;
+  pickupAlarmBtn.setAttribute("aria-checked", String(morningAlarmEnabled));
+  pickupAlarmBtn.classList.toggle("morning-alarm-on", morningAlarmEnabled);
+
+  if (!morningAlarmEnabled) {
+    // Alarm turned off — clear fired set so re-enabling starts fresh
+    morningFiredDistances.clear();
+    console.log("[morning-alert] alarm disabled — fired set cleared");
+  } else {
+    console.log("[morning-alert] alarm enabled");
+  }
+});
+
+/**
+ * Toggle a morning threshold chip on/off.
+ * No selection limit — all chips can be active simultaneously.
+ *
+ * @param {number}      metres
+ * @param {HTMLElement} chipEl
+ */
+function toggleMorningDistance(metres, chipEl) {
+  if (morningSelectedDistances.has(metres)) {
+    morningSelectedDistances.delete(metres);
+    chipEl.classList.remove("morn-selected");
+    chipEl.setAttribute("aria-pressed", "false");
+  } else {
+    morningSelectedDistances.add(metres);
+    chipEl.classList.add("morn-selected");
+    chipEl.setAttribute("aria-pressed", "true");
+  }
+
+  // Update selection count label
+  const n = morningSelectedDistances.size;
+  morningProxCount.textContent = n === 0
+    ? "0 selected"
+    : `${n} selected`;
+}
+
+// Wire up all morning chips
+document.querySelectorAll(".morn-chip").forEach(chip => {
+  const metres = parseInt(chip.dataset.metres, 10);
+  chip.addEventListener("click", () => toggleMorningDistance(metres, chip));
+});
+
+/**
+ * Check if the bus has entered any selected morning pickup threshold.
+ * Measures bus-to-student distance (not bus-to-destination).
+ * Called from loadBusLocations() in morning mode when bus is active
+ * and student GPS is available.
+ *
+ * Each threshold fires exactly once per session.
+ * Resets when alarm is toggled off, route changes, or session resets.
+ *
+ * @param {{ lat: number, lng: number }} bus
+ * @param {number} studentLat
+ * @param {number} studentLng
+ */
+function checkMorningProximityAlerts(bus, studentLat, studentLng) {
+  if (!morningAlarmEnabled) return;
+  if (morningSelectedDistances.size === 0) return;
+  if (bus.lat == null || bus.lng == null) return;
+  if (typeof studentLat !== "number" || typeof studentLng !== "number") return;
+
+  // Bus-to-student distance (not destination)
+  const dist = getDistance(bus.lat, bus.lng, studentLat, studentLng);
+
+  // Sort descending — largest threshold alerts first
+  const sorted = Array.from(morningSelectedDistances).sort((a, b) => b - a);
+
+  for (const threshold of sorted) {
+    if (dist <= threshold && !morningFiredDistances.has(threshold)) {
+      morningFiredDistances.add(threshold);
+
+      const label = threshold >= 1000
+        ? `${threshold / 1000} km`
+        : `${threshold} m`;
+
+      showProximityToast(`🚍 Bus is within ${label} — get ready!`);
+      console.log(
+        `[morning-alert] fired: ${label} (dist=${dist.toFixed(0)}m)`
+      );
+    }
+  }
+}
+
+
 // ─────────────────────────────────────────────
 // STATUS BAR
 //
@@ -431,6 +545,9 @@ function onSuggestionClick(item) {
   selectedRoute         = item;
   studentSearchEl.value = formatSuggestionLabel(item);
   busNoEl.value         = item.route_no;   // this is what loadBusLocations() reads
+
+  // Route changed — clear morning fired set so thresholds can re-trigger
+  morningFiredDistances.clear();
 
   searchClearBtn.classList.add("visible");
   hideSearchDropdown();
@@ -719,6 +836,8 @@ function resetPollingState() {
   clearInterval(pollingTimer);
   pollingTimer     = null;
   isOnboard        = false;
+  // Clear morning fired set so all thresholds can fire again this session
+  morningFiredDistances.clear();
   console.log("[polling] state reset");
 }
 
@@ -831,7 +950,13 @@ async function loadBusLocations(studentLat, studentLng) {
 
   if (!isOnboard) updateBusStatus(matchingBus, busNo);
 
+  // Evening mode: bus-to-destination proximity alerts
   if (tripMode === "evening") checkProximityAlerts(matchingBus);
+
+  // Morning mode: bus-to-student pickup alerts
+  if (tripMode === "morning") {
+    checkMorningProximityAlerts(matchingBus, studentLat, studentLng);
+  }
 
   // ── Smart polling + once-trigger onboard detection ──
   // Delegates to handleLocationUpdate() which gates all work behind

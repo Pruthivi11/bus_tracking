@@ -1,0 +1,68 @@
+2026-03-23 19:29:46,685 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-23 19:29:46,686 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-23 19:30:03,023 INFO [commute] [migration] pg_trgm extension ready
+2026-03-23 19:30:08,692 INFO [commute] [migration] index 'idx_bus_location_route_ts' already exists — skipping
+2026-03-23 19:30:08,693 INFO [commute] [migration] index 'idx_bus_details_route_area' already exists — skipping
+2026-03-23 19:30:08,693 INFO [commute] [migration] index 'idx_onboard_roll_route' already exists — skipping
+2026-03-23 19:30:08,694 INFO [commute] [migration] index 'idx_bus_details_route_area_trgm' already exists — skipping
+2026-03-23 19:30:09,629 INFO [commute] [DB] Authorized drivers loaded: {'8939289847', '9445102859', '9790782175', '9042169531', '7402072074', '7358362251'}
+2026-03-23 19:30:10,206 INFO [commute] Bus route cache warmed: 64 entries from DB.
+2026-03-23 19:31:30,588 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-23 19:31:30,588 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-23 19:31:47,012 INFO [commute] [migration] pg_trgm extension ready
+2026-03-23 19:31:52,829 INFO [commute] [migration] index 'idx_bus_location_route_ts' already exists — skipping
+2026-03-23 19:31:52,829 INFO [commute] [migration] index 'idx_bus_details_route_area' already exists — skipping
+2026-03-23 19:31:52,830 INFO [commute] [migration] index 'idx_onboard_roll_route' already exists — skipping
+2026-03-23 19:31:52,830 INFO [commute] [migration] index 'idx_bus_details_route_area_trgm' already exists — skipping
+2026-03-23 19:31:53,694 INFO [commute] [DB] Authorized drivers loaded: {'9042169531', '8939289847', '7358362251', '9445102859', '7402072074', '9790782175'}
+2026-03-23 19:31:54,272 INFO [commute] Bus route cache warmed: 64 entries from DB.
+2026-03-23 19:39:41,607 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-23 19:39:41,608 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-23 19:39:58,679 INFO [commute] [migration] pg_trgm extension ready
+2026-03-23 19:40:04,360 INFO [commute] [migration] index 'idx_bus_location_route_ts' already exists — skipping
+2026-03-23 19:40:04,360 INFO [commute] [migration] index 'idx_bus_details_route_area' already exists — skipping
+2026-03-23 19:40:04,360 INFO [commute] [migration] index 'idx_onboard_roll_route' already exists — skipping
+2026-03-23 19:40:04,361 INFO [commute] [migration] index 'idx_bus_details_route_area_trgm' already exists — skipping
+2026-03-23 19:40:05,215 INFO [commute] [DB] Authorized drivers loaded: {'9445102859', '9042169531', '9790782175', '7402072074', '7358362251', '8939289847'}
+2026-03-23 19:40:05,786 INFO [commute] Bus route cache warmed: 64 entries from DB.
+2026-03-23 19:42:36,944 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-23 19:42:36,945 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-23 19:42:53,176 INFO [commute] [migration] pg_trgm extension ready
+2026-03-23 19:42:58,935 INFO [commute] [migration] index 'idx_bus_location_route_ts' already exists — skipping
+2026-03-23 19:42:58,936 INFO [commute] [migration] index 'idx_bus_details_route_area' already exists — skipping
+2026-03-23 19:42:58,936 INFO [commute] [migration] index 'idx_onboard_roll_route' already exists — skipping
+2026-03-23 19:42:58,936 INFO [commute] [migration] index 'idx_bus_details_route_area_trgm' already exists — skipping
+2026-03-23 19:42:59,796 INFO [commute] [DB] Authorized drivers loaded: {'8939289847', '9445102859', '9042169531', '7402072074', '9790782175', '7358362251'}
+2026-03-23 19:43:00,376 INFO [commute] Bus route cache warmed: 64 entries from DB.
+2026-03-23 19:43:01,047 INFO [werkzeug] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.169:5000
+2026-03-23 19:43:01,048 INFO [werkzeug] [33mPress CTRL+C to quit[0m
+2026-03-23 19:43:01,051 INFO [werkzeug]  * Restarting with stat
+2026-03-23 19:43:03,217 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-23 19:43:03,218 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-23 19:43:19,665 INFO [commute] [migration] pg_trgm extension ready
+2026-03-23 19:43:25,455 INFO [commute] [migration] index 'idx_bus_location_route_ts' already exists — skipping
+2026-03-23 19:43:25,456 INFO [commute] [migration] index 'idx_bus_details_route_area' already exists — skipping
+2026-03-23 19:43:25,456 INFO [commute] [migration] index 'idx_onboard_roll_route' already exists — skipping
+2026-03-23 19:43:25,457 INFO [commute] [migration] index 'idx_bus_details_route_area_trgm' already exists — skipping
+2026-03-23 19:43:26,345 INFO [commute] [DB] Authorized drivers loaded: {'7358362251', '9445102859', '9790782175', '7402072074', '8939289847', '9042169531'}
+2026-03-23 19:43:26,915 INFO [commute] Bus route cache warmed: 64 entries from DB.
+2026-03-23 19:43:27,300 WARNING [werkzeug]  * Debugger is active!
+2026-03-23 19:43:27,312 INFO [werkzeug]  * Debugger PIN: 988-741-857
+2026-03-23 19:44:30,879 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:44:30] "GET / HTTP/1.1" 200 -
+2026-03-23 19:44:31,041 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:44:31] "GET /static/style.css HTTP/1.1" 200 -
+2026-03-23 19:44:31,130 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:44:31] "GET /static/favicon.ico HTTP/1.1" 200 -
+2026-03-23 19:45:12,473 INFO [werkzeug] 127.0.0.1 - - [23/Mar/2026 19:45:12] "GET / HTTP/1.1" 200 -
+2026-03-23 19:45:12,506 INFO [werkzeug] 127.0.0.1 - - [23/Mar/2026 19:45:12] "GET /static/style.css HTTP/1.1" 200 -
+2026-03-23 19:45:12,705 INFO [werkzeug] 127.0.0.1 - - [23/Mar/2026 19:45:12] "GET /static/favicon.ico HTTP/1.1" 200 -
+2026-03-23 19:46:58,066 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 19:46:58] "GET /health HTTP/1.1" 200 -
+2026-03-23 19:46:58,395 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 19:46:58] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-03-23 19:53:07,758 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:53:07] "GET /student HTTP/1.1" 200 -
+2026-03-23 19:53:07,799 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:53:07] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+2026-03-23 19:53:07,867 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:53:07] "GET /static/student.js HTTP/1.1" 200 -
+2026-03-23 19:53:08,002 INFO [werkzeug] 192.168.0.169 - - [23/Mar/2026 19:53:08] "[36mGET /static/favicon.ico HTTP/1.1[0m" 304 -
+2026-03-23 19:54:28,464 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 19:54:28] "POST /send_otp HTTP/1.1" 200 -
+2026-03-23 20:02:23,731 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 20:02:23] "POST /send_otp HTTP/1.1" 200 -
+2026-03-23 20:05:31,816 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 20:05:31] "POST /send_otp HTTP/1.1" 200 -

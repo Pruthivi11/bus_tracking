@@ -2803,3 +2803,186 @@ body.page-student .student-card .card-section {
   .prox-chip    { padding: 8px 2px; min-height: 50px; }
   .prox-chip-dist { font-size: 14px; }
 }
+
+
+/* ============================================================
+   21. MORNING PICKUP ALERT  (morning mode, bus-to-student)
+   ============================================================ */
+
+/* ── Section visibility ── */
+#morningAlertBlock        { display: none; }
+#morningAlertBlock.visible { display: block; }
+
+/* ── Alarm toggle row ── */
+.morning-alarm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.morning-alarm-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.morning-alarm-label i {
+  color: var(--blue);
+  font-size: 13px;
+}
+
+/* ── Toggle button shell ── */
+.morning-alarm-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  outline: none;
+}
+
+/* ── Track (pill background) ── */
+.morning-alarm-track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  background: var(--gray-200);
+  border-radius: 50px;
+  transition: background 0.22s ease;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Thumb (circle) ── */
+.morning-alarm-thumb {
+  position: absolute;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--white);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  transition: transform 0.22s ease;
+}
+
+/* ── ON state ── */
+.morning-alarm-btn.morning-alarm-on .morning-alarm-track {
+  background: var(--blue);
+}
+
+.morning-alarm-btn.morning-alarm-on .morning-alarm-thumb {
+  transform: translateX(18px);
+}
+
+/* ── Chip container ── */
+.morn-prox-box {
+  animation: fadeUp 0.25s ease both;
+}
+
+/* ── Chip header ── */
+.morn-prox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.morn-prox-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gray-400);
+}
+
+.morn-prox-count {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--blue);
+  transition: var(--transition);
+}
+
+/* ── 5-column chip grid ── */
+.morn-prox-options {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+/* ── Individual chip ── */
+.morn-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 4px;
+  min-height: 56px;
+  background: var(--gray-50);
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  touch-action: manipulation;
+  outline: none;
+}
+
+.morn-chip:active {
+  transform: scale(0.94);
+}
+
+/* ── Chip text ── */
+.morn-chip-dist {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gray-800);
+  line-height: 1;
+}
+
+.morn-chip-unit {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Selected state — blue (morning palette, distinct from evening amber) ── */
+.morn-chip.morn-selected {
+  border-color: var(--blue);
+  background: var(--blue-pale);
+}
+
+.morn-chip.morn-selected .morn-chip-dist {
+  color: var(--blue);
+}
+
+.morn-chip.morn-selected .morn-chip-unit {
+  color: var(--blue-light);
+}
+
+/* ── Fired (alert already sent for this threshold) ── */
+.morn-chip.morn-fired {
+  border-color: #6ee7b7;
+  background: #d1fae5;
+  opacity: 0.7;
+}
+
+.morn-chip.morn-fired .morn-chip-dist,
+.morn-chip.morn-fired .morn-chip-unit {
+  color: #065f46;
+}
+
+/* ── Responsive ── */
+@media (max-width: 340px) {
+  .morn-prox-options { gap: 5px; }
+  .morn-chip         { padding: 8px 2px; min-height: 50px; }
+  .morn-chip-dist    { font-size: 14px; }
+}

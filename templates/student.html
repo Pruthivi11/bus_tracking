@@ -130,6 +130,81 @@
           </div>
         </div>
 
+        <!-- MORNING — PICKUP ALERT -->
+        <!--
+          Shown only in morning mode.
+          Hidden by default; .visible class added by the mode toggle script.
+          The alarm toggle gates all threshold monitoring.
+          Chips use .morn-chip class (separate from .prox-chip) to keep
+          morning and evening state fully independent.
+        -->
+        <div class="card-section" id="morningAlertBlock">
+          <div class="section-title">
+            <i class="fa-solid fa-bus-simple"></i> Pickup Alert
+          </div>
+
+          <!--
+            Alarm on/off toggle.
+            When OFF: chip grid is shown but alerts are suppressed.
+            When ON:  bus distance vs student location is monitored.
+            Toggled by student.js morningAlarmEnabled flag.
+          -->
+          <div class="morning-alarm-row">
+            <label class="morning-alarm-label" for="pickupAlarmToggle">
+              <i class="fa-solid fa-bell"></i>
+              Enable Pickup Alert
+            </label>
+            <button
+              id="pickupAlarmToggle"
+              class="morning-alarm-btn"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Enable pickup alert"
+            >
+              <span class="morning-alarm-track">
+                <span class="morning-alarm-thumb"></span>
+              </span>
+            </button>
+          </div>
+
+          <!--
+            Threshold chip grid — no selection limit.
+            All 5 chips can be active simultaneously.
+            Managed by toggleMorningDistance() in student.js.
+          -->
+          <div id="morningProxBox" class="morn-prox-box">
+            <div class="morn-prox-header">
+              <span class="morn-prox-title">Alert me when bus is within</span>
+              <span class="morn-prox-count" id="morningProxCount">0 selected</span>
+            </div>
+
+            <div class="morn-prox-options" role="group" aria-label="Morning pickup alert distances">
+              <button class="morn-chip" data-metres="100"  type="button" aria-pressed="false">
+                <span class="morn-chip-dist">100</span>
+                <span class="morn-chip-unit">m</span>
+              </button>
+              <button class="morn-chip" data-metres="250"  type="button" aria-pressed="false">
+                <span class="morn-chip-dist">250</span>
+                <span class="morn-chip-unit">m</span>
+              </button>
+              <button class="morn-chip" data-metres="500"  type="button" aria-pressed="false">
+                <span class="morn-chip-dist">500</span>
+                <span class="morn-chip-unit">m</span>
+              </button>
+              <button class="morn-chip" data-metres="1000" type="button" aria-pressed="false">
+                <span class="morn-chip-dist">1</span>
+                <span class="morn-chip-unit">km</span>
+              </button>
+              <button class="morn-chip" data-metres="2000" type="button" aria-pressed="false">
+                <span class="morn-chip-dist">2</span>
+                <span class="morn-chip-unit">km</span>
+              </button>
+            </div>
+          </div><!-- /morningProxBox -->
+
+        </div><!-- /morningAlertBlock -->
+
         <!-- EVENING — DESTINATION & PROXIMITY ALERTS -->
         <div class="card-section" id="destinationBlock">
           <div class="section-title">
@@ -246,15 +321,18 @@
     });
   </script>
 
-  <!-- Destination block show/hide -->
+  <!-- Mode-dependent block show/hide -->
   <script>
     document.querySelectorAll("input[name='tripMode']").forEach(el => {
       el.addEventListener("change", () => {
-        const destBlock = document.getElementById("destinationBlock");
+        const destBlock    = document.getElementById("destinationBlock");
+        const morningBlock = document.getElementById("morningAlertBlock");
         if (el.value === "evening") {
-          destBlock.classList.add('visible');
+          destBlock.classList.add("visible");
+          morningBlock.classList.remove("visible");
         } else {
-          destBlock.classList.remove('visible');
+          destBlock.classList.remove("visible");
+          morningBlock.classList.add("visible");
         }
       });
     });
