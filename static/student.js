@@ -273,8 +273,8 @@ pickupAlarmBtn?.addEventListener("click", () => {
   pickupAlarmBtn.classList.toggle("morning-alarm-on", morningAlarmEnabled);
 
   if (!morningAlarmEnabled) {
-    // Alarm turned off — clear fired set so re-enabling starts fresh
-    morningFiredDistances.clear();
+    // Alarm turned off — clear fired set + chip visuals so re-enabling starts fresh
+    _clearMornFired();
     console.log("[morning-alert] alarm disabled — fired set cleared");
   } else {
     console.log("[morning-alert] alarm enabled");
@@ -313,28 +313,55 @@ document.querySelectorAll(".morn-chip").forEach(chip => {
 });
 
 /**
+ * Clear the morningFiredDistances set AND remove .morn-fired visual state
+ * from all chips. Called wherever a reset is needed so visual state stays
+ * in sync with JS state.
+ */
+function _clearMornFired() {
+  morningFiredDistances.clear();
+  document.querySelectorAll(".morn-chip").forEach(c => c.classList.remove("morn-fired"));
+}
+
+/**
  * Check if the bus has entered any selected morning pickup threshold.
  * Measures bus-to-student distance (not bus-to-destination).
- * Called from loadBusLocations() in morning mode when bus is active
- * and student GPS is available.
  *
- * Each threshold fires exactly once per session.
- * Resets when alarm is toggled off, route changes, or session resets.
+ * Called from loadBusLocations() in morning mode when bus is active.
+ * studentLat/Lng may be null on the first poll tick if GPS has not yet
+ * delivered a fix — falls back to _lastStudentLat/_lastStudentLng.
+ *
+ * Each threshold fires exactly once per session (morningFiredDistances).
+ * Resets when: alarm toggled off, route changes, or new session starts.
  *
  * @param {{ lat: number, lng: number }} bus
- * @param {number} studentLat
- * @param {number} studentLng
+ * @param {number|null} studentLat  — from current poll tick
+ * @param {number|null} studentLng  — from current poll tick
  */
 function checkMorningProximityAlerts(bus, studentLat, studentLng) {
+  // ── Bug 2 fix: fall back to last known GPS if current tick has no fix yet ──
+  const sLat = (typeof studentLat === "number") ? studentLat : _lastStudentLat;
+  const sLng = (typeof studentLng === "number") ? studentLng : _lastStudentLng;
+
+  // ── Debug log — visible in DevTools on every poll tick ──
+  console.log(
+    "[morning-alert] poll check |",
+    "alarm:", morningAlarmEnabled,
+    "| thresholds:", [...morningSelectedDistances],
+    "| GPS:", sLat != null ? `${sLat.toFixed(5)},${sLng.toFixed(5)}` : "waiting",
+    "| bus:", bus.lat != null ? `${bus.lat.toFixed(5)},${bus.lng.toFixed(5)}` : "no-fix"
+  );
+
   if (!morningAlarmEnabled) return;
   if (morningSelectedDistances.size === 0) return;
   if (bus.lat == null || bus.lng == null) return;
-  if (typeof studentLat !== "number" || typeof studentLng !== "number") return;
+  if (sLat == null || sLng == null) return;   // GPS not yet available
 
-  // Bus-to-student distance (not destination)
-  const dist = getDistance(bus.lat, bus.lng, studentLat, studentLng);
+  // Bus-to-student distance in metres
+  const dist = getDistance(bus.lat, bus.lng, sLat, sLng);
 
-  // Sort descending — largest threshold alerts first
+  console.log(`[morning-alert] distance=${dist.toFixed(0)}m | fired=${[...morningFiredDistances]}`);
+
+  // Sort descending — largest threshold alerts first, then smaller ones cascade
   const sorted = Array.from(morningSelectedDistances).sort((a, b) => b - a);
 
   for (const threshold of sorted) {
@@ -345,10 +372,23 @@ function checkMorningProximityAlerts(bus, studentLat, studentLng) {
         ? `${threshold / 1000} km`
         : `${threshold} m`;
 
-      showProximityToast(`🚍 Bus is within ${label} — get ready!`);
-      console.log(
-        `[morning-alert] fired: ${label} (dist=${dist.toFixed(0)}m)`
+      // ── Bug 7 fix: mark the chip as fired visually ──
+      const firedChip = document.querySelector(
+        `.morn-chip[data-metres="${threshold}"]`
       );
+      if (firedChip) {
+        firedChip.classList.add("morn-fired");
+      }
+
+      // ── In-page toast ──
+      showProximityToast(`🚍 Bus is within ${label} — get ready!`);
+
+      // ── Bug 3 fix: vibration feedback on mobile ──
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      }
+
+      console.log(`[morning-alert] ✅ FIRED: ${label} (dist=${dist.toFixed(0)}m)`);
     }
   }
 }
@@ -546,8 +586,8 @@ function onSuggestionClick(item) {
   studentSearchEl.value = formatSuggestionLabel(item);
   busNoEl.value         = item.route_no;   // this is what loadBusLocations() reads
 
-  // Route changed — clear morning fired set so thresholds can re-trigger
-  morningFiredDistances.clear();
+  // Route changed — clear morning fired set + chip visuals so thresholds can re-trigger
+  _clearMornFired();
 
   searchClearBtn.classList.add("visible");
   hideSearchDropdown();
@@ -836,8 +876,8 @@ function resetPollingState() {
   clearInterval(pollingTimer);
   pollingTimer     = null;
   isOnboard        = false;
-  // Clear morning fired set so all thresholds can fire again this session
-  morningFiredDistances.clear();
+  // Clear morning fired set + chip visuals so all thresholds fire fresh this session
+  _clearMornFired();
   console.log("[polling] state reset");
 }
 

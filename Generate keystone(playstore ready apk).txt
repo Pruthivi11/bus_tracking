@@ -1,0 +1,70 @@
+✅ PART 1 — Generate Release APK (Step-by-step)
+1. Go to android folder
+cd android
+2. Generate signing key (VERY IMPORTANT)
+
+Run this:
+
+keytool -genkeypair -v -storetype PKCS12 -keystore my-release-key.keystore -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000
+
+👉 It will ask:
+
+Password → remember this
+Name, org → just fill anything
+
+✔ File created:
+android/app/my-release-key.keystore
+
+3. Move key to correct place
+
+Move it here:
+
+android/app/my-release-key.keystore
+4. Configure signing (gradle)
+
+Open:
+
+android/gradle.properties
+
+Add:
+
+MYAPP_UPLOAD_STORE_FILE=my-release-key.keystore
+MYAPP_UPLOAD_KEY_ALIAS=my-key-alias
+MYAPP_UPLOAD_STORE_PASSWORD=your_password
+MYAPP_UPLOAD_KEY_PASSWORD=your_password
+5. Edit android/app/build.gradle
+
+Inside android {} → add:
+
+signingConfigs {
+    release {
+        storeFile file(MYAPP_UPLOAD_STORE_FILE)
+        storePassword MYAPP_UPLOAD_STORE_PASSWORD
+        keyAlias MYAPP_UPLOAD_KEY_ALIAS
+        keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+    }
+}
+
+Then inside buildTypes:
+
+release {
+    signingConfig signingConfigs.release
+    minifyEnabled false
+    shrinkResources false
+}
+6. Build APK
+
+Run:
+
+./gradlew assembleRelease
+
+(Windows 👇)
+
+gradlew assembleRelease
+7. Get your APK
+
+Location:
+
+android/app/build/outputs/apk/release/app-release.apk
+
+👉 Install this on your phone → works without USB

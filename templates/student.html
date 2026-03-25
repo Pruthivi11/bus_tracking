@@ -138,7 +138,7 @@
           Chips use .morn-chip class (separate from .prox-chip) to keep
           morning and evening state fully independent.
         -->
-        <div class="card-section" id="morningAlertBlock">
+        <div class="card-section visible" id="morningAlertBlock">
           <div class="section-title">
             <i class="fa-solid fa-bus-simple"></i> Pickup Alert
           </div>
@@ -323,18 +323,25 @@
 
   <!-- Mode-dependent block show/hide -->
   <script>
+    function syncModeBlocks(mode) {
+      const destBlock    = document.getElementById("destinationBlock");
+      const morningBlock = document.getElementById("morningAlertBlock");
+      if (mode === "evening") {
+        destBlock.classList.add("visible");
+        morningBlock.classList.remove("visible");
+      } else {
+        destBlock.classList.remove("visible");
+        morningBlock.classList.add("visible");
+      }
+    }
+
+    // Sync once on load using the initially-checked radio value
+    const _initMode = document.querySelector("input[name='tripMode']:checked");
+    if (_initMode) syncModeBlocks(_initMode.value);
+
+    // Sync on every mode change
     document.querySelectorAll("input[name='tripMode']").forEach(el => {
-      el.addEventListener("change", () => {
-        const destBlock    = document.getElementById("destinationBlock");
-        const morningBlock = document.getElementById("morningAlertBlock");
-        if (el.value === "evening") {
-          destBlock.classList.add("visible");
-          morningBlock.classList.remove("visible");
-        } else {
-          destBlock.classList.remove("visible");
-          morningBlock.classList.add("visible");
-        }
-      });
+      el.addEventListener("change", () => syncModeBlocks(el.value));
     });
   </script>
 
