@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
 from datetime import datetime, timedelta
 from functools import wraps
-import os, re, logging
+import os, re, logging, threading
 import pandas as pd
 import random
 import json as _json
@@ -168,6 +168,161 @@ EXCEL_PATH       = "drivers.xlsx"
 BUS_DETAILS_PATH = "bus_details.xlsx"   # seed source only — runtime data lives in DB
 
 # ─────────────────────────────────────────────
+# EXCEL SYNC  (DB → Excel, Excel → DB)
+#
+# Architecture:
+#   DB (PostgreSQL) is always the single source of truth.
+#   Excel is a mirror/backup that is:
+#     • Written automatically after every admin CREATE / UPDATE / DELETE
+#     • Read only when the admin explicitly triggers an import
+#
+# Thread safety:
+#   _excel_lock serialises concurrent writes so parallel requests
+#   cannot corrupt the file. Writes are dispatched to a background
+#   daemon thread so the API response is never blocked.
+#
+# Exported columns (drivers.xlsx):
+#   phone | name | created_at | updated_at
+# ─────────────────────────────────────────────
+
+_excel_lock = threading.Lock()
+
+
+def sync_drivers_to_excel():
+    """
+    Export all AuthorizedDriver rows to drivers.xlsx.
+
+    Runs in the calling thread — callers use _async_sync_drivers_to_excel()
+    when they want fire-and-forget background behaviour.
+
+    PostgreSQL → Excel direction only.  Never reads from Excel.
+    """
+    try:
+        with app.app_context():
+            rows = AuthorizedDriver.query.order_by(
+                AuthorizedDriver.created_at.asc()
+            ).all()
+
+            data = [
+                {
+                    "phone":      r.phone,
+                    "name":       r.name,
+                    "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                                  if r.created_at else "",
+                    "updated_at": r.updated_at.strftime("%Y-%m-%d %H:%M:%S")
+                                  if r.updated_at else "",
+                }
+                for r in rows
+            ]
+
+            df = pd.DataFrame(data, columns=["phone", "name", "created_at", "updated_at"])
+
+            with _excel_lock:
+                df.to_excel(EXCEL_PATH, index=False)
+
+            logger.info("[excel-sync] exported %d driver(s) to %s", len(data), EXCEL_PATH)
+
+    except Exception as e:
+        logger.error("[excel-sync] export failed: %s", e)
+
+
+def _async_sync_drivers_to_excel():
+    """
+    Dispatch sync_drivers_to_excel() on a daemon thread so the API
+    response is returned immediately and the Excel write happens in
+    the background.  Errors are logged but never raise to the caller.
+    """
+    t = threading.Thread(target=sync_drivers_to_excel, daemon=True)
+    t.start()
+
+
+def import_drivers_from_excel():
+    """
+    Read drivers.xlsx and upsert rows into AuthorizedDriver.
+
+    Excel → DB direction only.  This is the MANUAL import path —
+    never called automatically.  Returns (inserted, updated, skipped, errors).
+
+    Required columns: phone
+    Optional columns: name, created_at, updated_at
+    All other columns are silently ignored.
+
+    Validation:
+      • phone must be a valid 10-digit Indian mobile number
+      • rows with invalid / missing phones are skipped
+      • duplicate phones in the file are deduplicated (last row wins)
+    """
+    inserted = updated = skipped = 0
+    errors   = []
+
+    try:
+        df = pd.read_excel(EXCEL_PATH)
+    except FileNotFoundError:
+        return 0, 0, 0, [f"{EXCEL_PATH} not found"]
+    except Exception as e:
+        return 0, 0, 0, [f"Could not read {EXCEL_PATH}: {e}"]
+
+    # Normalise column names (lowercase, strip)
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    if "phone" not in df.columns:
+        return 0, 0, 0, ["Excel file must have a 'phone' column"]
+
+    # Fill optional columns with defaults if absent
+    if "name" not in df.columns:
+        df["name"] = ""
+
+    df["phone"] = df["phone"].astype(str).apply(_normalize_phone)
+    df["name"]  = df["name"].fillna("").astype(str).str.strip()
+
+    # Deduplicate: keep last occurrence per phone
+    df = df.drop_duplicates(subset="phone", keep="last")
+
+    for _, row in df.iterrows():
+        phone = row["phone"]
+        name  = row["name"]
+
+        # Validate phone
+        import re as _re
+        if not _re.fullmatch(r"[6-9]\d{9}", phone):
+            skipped += 1
+            errors.append(f"Skipped invalid phone: {phone!r}")
+            continue
+
+        try:
+            existing = AuthorizedDriver.query.filter_by(phone=phone).first()
+            now = datetime.utcnow()
+
+            if existing:
+                existing.name       = name
+                existing.updated_at = now
+                updated += 1
+            else:
+                db.session.add(AuthorizedDriver(
+                    phone=phone, name=name,
+                    created_at=now, updated_at=now
+                ))
+                inserted += 1
+
+        except Exception as row_err:
+            skipped += 1
+            errors.append(f"Row error ({phone}): {row_err}")
+            db.session.rollback()
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return 0, 0, skipped, [f"DB commit failed: {e}"]
+
+    logger.info(
+        "[excel-sync] import complete — inserted=%d updated=%d skipped=%d",
+        inserted, updated, skipped
+    )
+    return inserted, updated, skipped, errors
+
+# ─────────────────────────────────────────────
 # BUS INACTIVITY THRESHOLD
 #
 # A bus is considered inactive when its last location update
@@ -249,8 +404,10 @@ class AuthorizedDriver(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     phone      = db.Column(db.String(20), unique=True, nullable=False, index=True)
     name       = db.Column(db.String(100), default="")
-    # Change 3: index=True on created_at — used for ORDER BY in paginated queries
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    # updated_at tracks the last admin change; added via _run_migrations()
+    # so it appears safely on pre-existing tables without data loss.
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class BusLocation(db.Model):
@@ -715,8 +872,10 @@ def _drivers_get_all_excel(search, sort, page, per_page):
 def _add_driver_db(phone, name):
     if AuthorizedDriver.query.filter_by(phone=phone).first():
         return False, "Phone number already exists."
-    db.session.add(AuthorizedDriver(phone=phone, name=name))
+    now = datetime.utcnow()
+    db.session.add(AuthorizedDriver(phone=phone, name=name, created_at=now, updated_at=now))
     db.session.commit()
+    _async_sync_drivers_to_excel()   # mirror to Excel in background
     return True, None
 
 
@@ -745,9 +904,11 @@ def _update_driver_db(driver_id, new_phone, new_name):
         if AuthorizedDriver.query.filter_by(phone=new_phone).first():
             return False, "Phone number already used by another driver.", None
 
-    rec.phone = new_phone
-    rec.name  = new_name
+    rec.phone      = new_phone
+    rec.name       = new_name
+    rec.updated_at = datetime.utcnow()
     db.session.commit()
+    _async_sync_drivers_to_excel()   # mirror to Excel in background
     return True, None, old_phone
 
 
@@ -782,6 +943,7 @@ def _delete_driver_db(driver_id):
     old_phone = rec.phone
     db.session.delete(rec)
     db.session.commit()
+    _async_sync_drivers_to_excel()   # mirror to Excel in background
     return True, None, old_phone
 
 
@@ -964,6 +1126,99 @@ def admin_delete_driver(driver_id):
 @admin_required
 def admin_driver_source():
     return jsonify({"source": get_driver_source()})
+
+
+# ─────────────────────────────────────────────
+# DRIVER EXCEL IMPORT / EXPORT
+# ─────────────────────────────────────────────
+
+@app.route("/admin/import-drivers", methods=["POST"])
+@admin_required
+def admin_import_drivers():
+    """
+    POST /admin/import-drivers
+
+    Reads drivers.xlsx and upserts rows into AuthorizedDriver.
+    PostgreSQL is the authority — this is a one-way import tool.
+
+    Response:
+      { "status": "ok", "inserted": N, "updated": N, "skipped": N, "errors": [...] }
+    """
+    inserted, updated, skipped, errors = import_drivers_from_excel()
+
+    # Refresh the in-memory auth set from the updated DB
+    global AUTHORIZED_DRIVERS
+    try:
+        AUTHORIZED_DRIVERS = {
+            _normalize_phone(r.phone)
+            for r in AuthorizedDriver.query.all()
+        }
+        logger.info("[import] AUTHORIZED_DRIVERS refreshed — %d entries", len(AUTHORIZED_DRIVERS))
+    except Exception as e:
+        logger.error("[import] failed to refresh AUTHORIZED_DRIVERS: %s", e)
+
+    status = "ok" if not errors or (inserted + updated) > 0 else "error"
+    http_code = 200 if status == "ok" else 400
+
+    return jsonify({
+        "status":   status,
+        "inserted": inserted,
+        "updated":  updated,
+        "skipped":  skipped,
+        "errors":   errors[:10],   # cap error list to avoid huge response
+    }), http_code
+
+
+@app.route("/admin/export-drivers")
+@admin_required
+def admin_export_drivers():
+    """
+    GET /admin/export-drivers
+
+    Generates a fresh drivers.xlsx from the DB and returns it as a
+    file download.  This is the on-demand export path — the automatic
+    background sync (_async_sync_drivers_to_excel) keeps the file
+    current, but this endpoint lets admins pull a guaranteed-fresh copy.
+    """
+    from flask import send_file
+    import io
+
+    try:
+        rows = AuthorizedDriver.query.order_by(
+            AuthorizedDriver.created_at.asc()
+        ).all()
+
+        data = [
+            {
+                "phone":      r.phone,
+                "name":       r.name,
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                              if r.created_at else "",
+                "updated_at": r.updated_at.strftime("%Y-%m-%d %H:%M:%S")
+                              if r.updated_at else "",
+            }
+            for r in rows
+        ]
+
+        df = pd.DataFrame(data, columns=["phone", "name", "created_at", "updated_at"])
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Drivers")
+        buf.seek(0)
+
+        logger.info("[export] sending drivers.xlsx (%d rows) to admin", len(data))
+
+        return send_file(
+            buf,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="drivers.xlsx",
+        )
+
+    except Exception as e:
+        logger.error("[export] failed: %s", e)
+        return jsonify({"error": "Export failed — see server logs"}), 500
 
 
 # ─────────────────────────────────────────────
@@ -1645,6 +1900,5 @@ def onboard():
         logger.error("[onboard] ERROR: %s", e)
         db.session.rollback()
         return jsonify({"error": "onboard update failed"}), 500
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

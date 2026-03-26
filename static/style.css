@@ -2986,3 +2986,76 @@ body.page-student .student-card .card-section {
   .morn-chip         { padding: 8px 2px; min-height: 50px; }
   .morn-chip-dist    { font-size: 14px; }
 }
+
+
+/* ============================================================
+   22. EXCEL SYNC BUTTONS  (admin driver management)
+   ============================================================ */
+
+/* ── Button row in page-header ── */
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Shared base for both buttons ── */
+.btn-excel-import,
+.btn-excel-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  touch-action: manipulation;
+  white-space: nowrap;
+  text-decoration: none;
+  border: 1.5px solid transparent;
+}
+
+/* ── Import button — blue outline ── */
+.btn-excel-import {
+  background: var(--blue-pale);
+  color: var(--blue);
+  border-color: var(--blue-light);
+}
+
+.btn-excel-import:hover   { background: var(--blue); color: var(--white); }
+.btn-excel-import:active  { transform: scale(0.97); }
+.btn-excel-import:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Export button — green outline ── */
+.btn-excel-export {
+  background: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+
+.btn-excel-export:hover  { background: #059669; color: var(--white); border-color: #059669; }
+.btn-excel-export:active { transform: scale(0.97); }
+
+/* ── Responsive: stack vertically on narrow screens ── */
+@media (max-width: 480px) {
+  .page-header-actions { width: 100%; }
+  .btn-excel-import,
+  .btn-excel-export    { flex: 1; justify-content: center; }
+}
+
+/* ── Make page-header row on wider screens ── */
+@media (min-width: 640px) {
+  .page-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}

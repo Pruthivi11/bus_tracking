@@ -107,6 +107,17 @@
             <span id="sourceBadge" class="source-badge">—</span>
           </p>
         </div>
+        <!-- Excel sync actions — DB is always the source of truth -->
+        <div class="page-header-actions">
+          <button class="btn-excel-import" onclick="importFromExcel()" title="Import drivers.xlsx into DB">
+            <i class="fa-solid fa-file-import"></i>
+            <span>Import Excel</span>
+          </button>
+          <a class="btn-excel-export" href="/admin/export-drivers" title="Download current DB as Excel">
+            <i class="fa-solid fa-file-export"></i>
+            <span>Export Excel</span>
+          </a>
+        </div>
       </div>
 
       <!-- ADD DRIVER -->
@@ -470,6 +481,60 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+
+  // ══════════════════════════════════════════════
+  // EXCEL IMPORT
+  // Calls POST /admin/import-drivers which reads
+  // drivers.xlsx from the server and upserts rows
+  // into the DB.  DB remains the source of truth.
+  // ══════════════════════════════════════════════
+
+  function importFromExcel() {
+    const btn = document.querySelector('.btn-excel-import');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Importing…</span>';
+    }
+
+    fetch('/admin/import-drivers', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-file-import"></i> <span>Import Excel</span>';
+        }
+
+        if (data.status === 'ok' || data.inserted > 0 || data.updated > 0) {
+          const parts = [];
+          if (data.inserted > 0) parts.push(`${data.inserted} added`);
+          if (data.updated  > 0) parts.push(`${data.updated} updated`);
+          if (data.skipped  > 0) parts.push(`${data.skipped} skipped`);
+
+          const summary = parts.length > 0 ? parts.join(', ') : 'No changes';
+          showToast(`Import complete — ${summary}`);
+
+          // Reload the driver list to reflect any changes
+          loadDrivers(1);
+        } else {
+          const errMsg = data.errors && data.errors.length
+            ? data.errors[0]
+            : 'Import failed — check server logs';
+          showToast(errMsg, 'error');
+        }
+
+        // Log full detail to console for debugging
+        console.log('[import-excel]', data);
+      })
+      .catch(err => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-file-import"></i> <span>Import Excel</span>';
+        }
+        showToast('Import request failed — check your connection', 'error');
+        console.error('[import-excel] fetch error:', err);
+      });
   }
 
 
