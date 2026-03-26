@@ -65,7 +65,7 @@
                 class="form-input"
                 type="text"
                 inputmode="numeric"
-                placeholder="Enter Route number"
+                placeholder="e.g. 12"
                 autocomplete="off"
                 maxlength="10"
               >
@@ -145,6 +145,53 @@
             <button id="endBtn" class="btn-end" onclick="endTrip()" disabled>
               <i class="fa-solid fa-stop"></i> End Trip
             </button>
+          </div>
+
+          <!--
+            Route Mapping card.
+            Hidden by default (.rm-driver-card has display:none).
+            Shown only when admin has enabled mapping for this route:
+            driver.js calls /driver/mapping-status after route number entry
+            and adds .visible class if allowed.
+            Operates independently of the trip — driver can map without
+            starting a regular trip, or simultaneously.
+          -->
+          <div id="mappingCard" class="rm-driver-card">
+            <div class="rm-driver-header">
+              <span class="rm-driver-title">
+                <i class="fa-solid fa-route"></i>
+                Route Mapping
+              </span>
+              <span class="rm-driver-badge" id="mappingBadge">Ready</span>
+            </div>
+
+            <p class="rm-driver-hint" id="mappingHint">
+              Admin has enabled route recording. Drive the full route, then stop.
+            </p>
+
+            <div class="rm-driver-stats" id="mappingStats"></div>
+
+            <div class="btn-row">
+              <button
+                id="startMappingBtn"
+                class="rm-btn-start-map"
+                onclick="startMapping()"
+                type="button"
+              >
+                <i class="fa-solid fa-map-location-dot"></i>
+                <span id="startMappingLabel">Start Mapping</span>
+              </button>
+              <button
+                id="stopMappingBtn"
+                class="rm-btn-stop-map"
+                onclick="stopMapping()"
+                type="button"
+                disabled
+              >
+                <i class="fa-solid fa-flag-checkered"></i>
+                Stop &amp; Save
+              </button>
+            </div>
           </div>
 
           <button class="btn-logout" onclick="logout()">

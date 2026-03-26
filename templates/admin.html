@@ -40,6 +40,9 @@
       <button class="admin-tab tab-drivers" onclick="switchTab('drivers')">
         <i class="fa-solid fa-users"></i> Drivers
       </button>
+      <button class="admin-tab tab-mapping" onclick="switchTab('mapping')">
+        <i class="fa-solid fa-route"></i> Route Mapping
+      </button>
     </div>
 
     <!-- ═══════════════════════════════════════════
@@ -203,6 +206,46 @@
 
     </div><!-- /panel-drivers -->
 
+
+    <!-- ═══════════════════════════════════════════
+         TAB 3: ROUTE MAPPING
+         ═══════════════════════════════════════════ -->
+    <div id="panel-mapping" class="tab-panel">
+
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Route Mapping</h1>
+          <p>Grant drivers permission to record GPS routes</p>
+        </div>
+        <button class="btn-refresh" onclick="loadMappingData()">
+          <i class="fa-solid fa-rotate-right spin-icon"></i>
+          Refresh
+        </button>
+      </div>
+
+      <!--
+        Info banner explaining the workflow.
+        No inline CSS — styled via .rm-info-banner in style.css.
+      -->
+      <div class="rm-info-banner">
+        <i class="fa-solid fa-circle-info"></i>
+        <span>
+          Click <strong>Allow Mapping</strong> to let the driver record a new route path.
+          The driver's GPS pings are compressed (≥ 15 m apart) and stored as a
+          compact polyline once they stop. DB is always the source of truth.
+        </span>
+      </div>
+
+      <!-- Route mapping list — populated by loadMappingData() -->
+      <div id="mappingList">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <div class="loading-txt">Loading route data…</div>
+        </div>
+      </div>
+
+    </div><!-- /panel-mapping -->
+
   </main>
 
   <footer>&copy; 2026 Commute Assistant</footer>
@@ -243,6 +286,7 @@
       loadDrivers(1);
       _driversLoaded = true;
     }
+    if (tab === 'mapping') loadMappingData();
   }
   let _driversLoaded = false;
 
@@ -650,6 +694,131 @@
 
   loadBusData();
   setInterval(loadBusData, 10000);
+
+
+  // ══════════════════════════════════════════════
+  // ROUTE MAPPING TAB
+  // ══════════════════════════════════════════════
+
+  function loadMappingData() {
+    const list = document.getElementById('mappingList');
+    list.innerHTML = `
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <div class="loading-txt">Loading route data…</div>
+      </div>`;
+
+    fetch('/admin/mapping-status')
+      .then(r => r.json())
+      .then(items => renderMappingList(items))
+      .catch(() => {
+        list.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <h3>Failed to load</h3>
+            <p>Check your connection and try refreshing.</p>
+          </div>`;
+      });
+  }
+
+  function renderMappingList(items) {
+    const list = document.getElementById('mappingList');
+
+    if (!items || items.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon"><i class="fa-solid fa-route"></i></div>
+          <h3>No routes found</h3>
+          <p>Routes appear here once drivers have started a trip.</p>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = '';
+
+    items.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'rm-card';
+
+      // Status badge
+      let statusBadge;
+      if (item.is_mapping_active) {
+        statusBadge = `<span class="rm-badge rm-badge-recording">
+                         <span class="dot"></span>Recording
+                       </span>`;
+      } else if (item.has_polyline) {
+        statusBadge = `<span class="rm-badge rm-badge-mapped">
+                         <i class="fa-solid fa-check"></i> Mapped v${item.version}
+                       </span>`;
+      } else if (item.is_mapping_allowed) {
+        statusBadge = `<span class="rm-badge rm-badge-allowed">
+                         <i class="fa-solid fa-circle-check"></i> Allowed
+                       </span>`;
+      } else {
+        statusBadge = `<span class="rm-badge rm-badge-none">Not mapped</span>`;
+      }
+
+      // Action button
+      const btnLabel = item.has_polyline
+        ? '<i class="fa-solid fa-rotate"></i> Update Mapping'
+        : '<i class="fa-solid fa-map-location-dot"></i> Allow Mapping';
+
+      const btnDisabled = item.is_mapping_active ? 'disabled' : '';
+      const btnTitle    = item.is_mapping_active
+        ? 'Mapping in progress — wait for driver to stop'
+        : item.has_polyline
+          ? 'Allow driver to re-record this route'
+          : 'Allow driver to record this route for the first time';
+
+      // Point / polyline info
+      let infoLine = '';
+      if (item.is_mapping_active && item.point_count > 0) {
+        infoLine = `<span class="rm-info-line">${item.point_count} points recorded so far</span>`;
+      } else if (item.has_polyline) {
+        const ts = item.updated_at
+          ? new Date(item.updated_at).toLocaleString()
+          : '—';
+        infoLine = `<span class="rm-info-line">Last recorded: ${ts}</span>`;
+      }
+
+      card.innerHTML = `
+        <div class="rm-card-left">
+          <div class="rm-route-num">Route ${escHtml(item.route)}</div>
+          <div class="rm-route-area">${escHtml(item.bus_route || '—')}</div>
+          ${infoLine}
+        </div>
+        <div class="rm-card-right">
+          ${statusBadge}
+          <button
+            class="rm-btn-allow"
+            ${btnDisabled}
+            title="${btnTitle}"
+            onclick="enableMapping('${escHtml(item.route)}', '${escHtml(item.bus_route || '')}')"
+          >${btnLabel}</button>
+        </div>`;
+
+      list.appendChild(card);
+    });
+  }
+
+  function enableMapping(route, busRoute) {
+    fetch('/admin/enable-mapping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route, bus_route: busRoute }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          const label = data.has_polyline ? 'update' : 'record';
+          showToast(`Route ${route} — driver may now ${label} the route`);
+          loadMappingData();
+        } else {
+          showToast(data.error || 'Failed to enable mapping', 'error');
+        }
+      })
+      .catch(() => showToast('Request failed', 'error'));
+  }
 
   </script>
 </body>

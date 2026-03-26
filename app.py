@@ -468,6 +468,37 @@ class BusDetails(db.Model):
         return {"id": self.id, "bus_no": self.bus_no, "bus_route": self.bus_route}
 
 
+class RouteMapping(db.Model):
+    """
+    Stores the recorded GPS path for a bus route.
+
+    Lifecycle:
+      1. Admin sets is_mapping_allowed=True  → driver can record
+      2. Driver starts  → is_mapping_active=True, raw_points accumulates
+      3. Driver stops   → raw_points compressed → polyline stored → raw_points cleared
+      4. version increments on every completed recording
+
+    raw_points: temporary list of [lat, lng] pairs during an active mapping session.
+                Cleared to None after polyline encoding.
+    polyline:   Google-encoded polyline string — compact permanent storage.
+    """
+    __tablename__ = "route_mapping"
+
+    id        = db.Column(db.Integer, primary_key=True)
+    route     = db.Column(db.String(20), nullable=False, unique=True, index=True)
+    bus_route = db.Column(db.String(100))          # area name, e.g. "Velachery"
+
+    polyline   = db.Column(db.Text)                # encoded polyline — final storage
+    raw_points = db.Column(db.JSON)                # [[lat,lng], ...] during mapping only
+
+    is_mapping_allowed = db.Column(db.Boolean, default=False, nullable=False)
+    is_mapping_active  = db.Column(db.Boolean, default=False, nullable=False)
+
+    version    = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 # ─────────────────────────────────────────────
 # PHONE UTILITIES
 # ─────────────────────────────────────────────
@@ -490,18 +521,114 @@ def _normalize_route(raw) -> str:
     """
     Normalise a bus/route number to a canonical form used everywhere:
     strip whitespace, convert to UPPERCASE.
-
-    Applied identically in:
-      - /location          (driver write)
-      - /end_trip          (driver write)
-      - /get_locations     (read + comparison)
-      - /get-route         (bus details lookup)
-      - student.js         (frontend comparison, same logic mirrored in JS)
-
-    This prevents "12a" vs "12A", "Route 5" vs "route 5",
-    or trailing-space mismatches from breaking the active check.
     """
     return str(raw).strip().upper()
+
+
+# ─────────────────────────────────────────────
+# ROUTE MAPPING UTILITIES
+# ─────────────────────────────────────────────
+
+import math as _math
+
+def _haversine_metres(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Return the great-circle distance in metres between two GPS points.
+    Uses the Haversine formula — accurate to within ~0.5 % for short distances.
+    """
+    R = 6_371_000.0          # Earth radius in metres
+    phi1 = _math.radians(lat1)
+    phi2 = _math.radians(lat2)
+    dphi = _math.radians(lat2 - lat1)
+    dlam = _math.radians(lng2 - lng1)
+    a = (_math.sin(dphi / 2) ** 2
+         + _math.cos(phi1) * _math.cos(phi2) * _math.sin(dlam / 2) ** 2)
+    return R * 2 * _math.atan2(_math.sqrt(a), _math.sqrt(1 - a))
+
+
+def _bearing(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Return the compass bearing (0–360°) from point 1 to point 2."""
+    phi1 = _math.radians(lat1)
+    phi2 = _math.radians(lat2)
+    dlam = _math.radians(lng2 - lng1)
+    x = _math.sin(dlam) * _math.cos(phi2)
+    y = (_math.cos(phi1) * _math.sin(phi2)
+         - _math.sin(phi1) * _math.cos(phi2) * _math.cos(dlam))
+    return (_math.degrees(_math.atan2(x, y)) + 360) % 360
+
+
+def _bearing_diff(b1: float, b2: float) -> float:
+    """Return the absolute angular difference between two bearings (0–180°)."""
+    d = abs(b1 - b2) % 360
+    return d if d <= 180 else 360 - d
+
+
+def _should_record_point(raw_points: list,
+                          lat: float, lng: float,
+                          min_dist_m: float = 15.0,
+                          min_turn_deg: float = 10.0) -> bool:
+    """
+    Return True if the new GPS point is worth recording.
+
+    A point is kept if:
+      • It is the very first point, OR
+      • Distance from the last saved point ≥ min_dist_m (15 m default), OR
+      • Direction change from the previous segment ≥ min_turn_deg (10° default)
+
+    This eliminates GPS noise on straight roads while preserving turn details.
+    """
+    if not raw_points:
+        return True
+
+    last = raw_points[-1]           # [lat, lng]
+    dist = _haversine_metres(last[0], last[1], lat, lng)
+
+    if dist >= min_dist_m:
+        return True
+
+    if len(raw_points) >= 2:
+        prev = raw_points[-2]
+        old_bearing = _bearing(prev[0], prev[1], last[0], last[1])
+        new_bearing = _bearing(last[0], last[1], lat, lng)
+        if _bearing_diff(old_bearing, new_bearing) >= min_turn_deg:
+            return True
+
+    return False
+
+
+def _encode_polyline(points: list) -> str:
+    """
+    Encode a list of [lat, lng] pairs using the Google Encoded Polyline Algorithm.
+
+    The algorithm encodes coordinate deltas as a variable-length ASCII string.
+    Each value is multiplied by 1e5, rounded, XOR-shifted, and encoded in
+    chunks of 5 bits plus an ASCII offset of 63.
+
+    Reference: https://developers.google.com/maps/documentation/utilities/polylinealgorithm
+    """
+    def _encode_value(value: int) -> str:
+        value = value << 1
+        if value < 0:
+            value = ~value
+        chunks = []
+        while value >= 0x20:
+            chunks.append(chr((0x20 | (value & 0x1F)) + 63))
+            value >>= 5
+        chunks.append(chr(value + 63))
+        return "".join(chunks)
+
+    result   = []
+    prev_lat = 0
+    prev_lng = 0
+
+    for point in points:
+        lat = round(point[0] * 1e5)
+        lng = round(point[1] * 1e5)
+        result.append(_encode_value(lat - prev_lat))
+        result.append(_encode_value(lng - prev_lng))
+        prev_lat, prev_lng = lat, lng
+
+    return "".join(result)
 
 
 def is_bus_active(last_updated) -> bool:
@@ -1666,6 +1793,35 @@ def location():
         # fetches the fresh position from DB rather than stale cached data.
         _cache_delete(_BUS_LOCATIONS_KEY)
         logger.info("[location] COMMITTED — route=%r active=True timestamp=%s", route, now.isoformat())
+
+        # ── Route mapping side-effect (non-blocking) ──────────────────
+        # If an active mapping session exists for this route, conditionally
+        # append the new GPS point using the smart compression filter.
+        # Any error here is logged but NEVER propagates to the response —
+        # live tracking must not be affected by mapping logic.
+        try:
+            from sqlalchemy.orm.attributes import flag_modified
+            mapping = RouteMapping.query.filter_by(
+                route=route, is_mapping_active=True
+            ).first()
+
+            if mapping is not None:
+                raw = mapping.raw_points or []
+                if _should_record_point(raw, lat, lng):
+                    raw = list(raw)   # copy so SQLAlchemy detects the change
+                    raw.append([lat, lng])
+                    mapping.raw_points = raw
+                    mapping.updated_at = now
+                    flag_modified(mapping, "raw_points")
+                    db.session.commit()
+                    logger.debug(
+                        "[mapping] route=%r appended point #%d (%.5f, %.5f)",
+                        route, len(raw), lat, lng
+                    )
+        except Exception as map_err:
+            db.session.rollback()
+            logger.error("[mapping] side-effect error (non-fatal): %s", map_err)
+
         return jsonify({"status": "ok", "route": route, "timestamp": now.isoformat()})
 
     except Exception as e:
@@ -1826,6 +1982,261 @@ def health():
 
 
 # ─────────────────────────────────────────────
+# ROUTE MAPPING — ADMIN ENDPOINTS
+# ─────────────────────────────────────────────
+
+@app.route("/admin/enable-mapping", methods=["POST"])
+@admin_required
+def admin_enable_mapping():
+    """
+    POST /admin/enable-mapping
+    Body: { "route": "22", "bus_route": "Karayanchavadi" }
+
+    Grants permission for the driver of this route to record a route mapping.
+    Creates the RouteMapping record if it does not yet exist.
+    Sets is_mapping_allowed=True, is_mapping_active=False.
+    """
+    data      = request.get_json(silent=True) or {}
+    route     = _normalize_route(data.get("route", ""))
+    bus_route = str(data.get("bus_route", "")).strip()
+
+    if not route:
+        return jsonify({"error": "route is required"}), 400
+
+    mapping = RouteMapping.query.filter_by(route=route).first()
+    now     = datetime.utcnow()
+
+    if mapping:
+        mapping.is_mapping_allowed = True
+        mapping.is_mapping_active  = False
+        mapping.bus_route          = bus_route or mapping.bus_route
+        mapping.updated_at         = now
+        action = "updated"
+    else:
+        mapping = RouteMapping(
+            route=route,
+            bus_route=bus_route,
+            is_mapping_allowed=True,
+            is_mapping_active=False,
+            version=0,
+            created_at=now,
+            updated_at=now,
+        )
+        db.session.add(mapping)
+        action = "created"
+
+    db.session.commit()
+    logger.info("[mapping] admin enabled mapping for route=%r (%s)", route, action)
+
+    return jsonify({
+        "status":    "ok",
+        "route":     route,
+        "action":    action,
+        "has_polyline": bool(mapping.polyline),
+        "version":   mapping.version,
+    })
+
+
+@app.route("/admin/mapping-status")
+@admin_required
+def admin_mapping_status():
+    """
+    GET /admin/mapping-status
+
+    Returns all RouteMapping records for the admin Route Mapping tab.
+    Also merges in known routes from BusLocation so routes without a
+    mapping record still appear (with allow button).
+    """
+    # All routes that have ever sent a location
+    bus_routes = {
+        b.route: b.bus_route or ""
+        for b in BusLocation.query.with_entities(
+            BusLocation.route, BusLocation.bus_route
+        ).all()
+    }
+
+    mappings_by_route = {
+        m.route: m
+        for m in RouteMapping.query.all()
+    }
+
+    # Merge: start with all known bus routes, overlay mapping records
+    all_routes = dict(bus_routes)
+    for r in mappings_by_route:
+        if r not in all_routes:
+            all_routes[r] = mappings_by_route[r].bus_route or ""
+
+    result = []
+    for route, area in sorted(all_routes.items()):
+        m = mappings_by_route.get(route)
+        result.append({
+            "route":               route,
+            "bus_route":           area,
+            "has_mapping":         m is not None,
+            "has_polyline":        bool(m and m.polyline),
+            "is_mapping_allowed":  m.is_mapping_allowed if m else False,
+            "is_mapping_active":   m.is_mapping_active  if m else False,
+            "version":             m.version             if m else 0,
+            "point_count":         len(m.raw_points)     if (m and m.raw_points) else 0,
+            "updated_at":          m.updated_at.isoformat() if (m and m.updated_at) else None,
+        })
+
+    return jsonify(result)
+
+
+# ─────────────────────────────────────────────
+# ROUTE MAPPING — DRIVER ENDPOINTS
+# ─────────────────────────────────────────────
+
+@app.route("/driver/mapping-status")
+def driver_mapping_status():
+    """
+    GET /driver/mapping-status?route=22
+
+    Called by driver.js after the driver enters a route number.
+    Returns whether mapping is allowed and the current session state.
+    No auth required — route number is the key; no sensitive data returned.
+    """
+    route = _normalize_route(request.args.get("route", ""))
+    if not route:
+        return jsonify({"allowed": False})
+
+    mapping = RouteMapping.query.filter_by(route=route).first()
+    if not mapping or not mapping.is_mapping_allowed:
+        return jsonify({"allowed": False})
+
+    return jsonify({
+        "allowed":      True,
+        "is_active":    mapping.is_mapping_active,
+        "has_polyline": bool(mapping.polyline),
+        "version":      mapping.version,
+        "point_count":  len(mapping.raw_points) if mapping.raw_points else 0,
+    })
+
+
+@app.route("/driver/start-mapping", methods=["POST"])
+def driver_start_mapping():
+    """
+    POST /driver/start-mapping
+    Body: { "route": "22" }
+
+    Starts a new mapping session for the given route.
+    Resets raw_points and sets is_mapping_active=True.
+    Requires is_mapping_allowed=True (set by admin).
+    """
+    data  = request.get_json(silent=True) or {}
+    route = _normalize_route(data.get("route", ""))
+
+    if not route:
+        return jsonify({"error": "route is required"}), 400
+
+    mapping = RouteMapping.query.filter_by(route=route).first()
+
+    if not mapping:
+        return jsonify({"error": "Mapping not enabled for this route"}), 403
+    if not mapping.is_mapping_allowed:
+        return jsonify({"error": "Mapping not permitted for this route"}), 403
+
+    mapping.is_mapping_active = True
+    mapping.raw_points        = []
+    mapping.updated_at        = datetime.utcnow()
+    db.session.commit()
+
+    logger.info("[mapping] started for route=%r", route)
+    return jsonify({"status": "ok", "route": route, "message": "Mapping started"})
+
+
+@app.route("/driver/stop-mapping", methods=["POST"])
+def driver_stop_mapping():
+    """
+    POST /driver/stop-mapping
+    Body: { "route": "22" }
+
+    Stops the active mapping session.
+    Encodes raw_points → polyline, increments version, clears raw_points.
+    Requires at least 2 recorded points to produce a valid polyline.
+    """
+    data  = request.get_json(silent=True) or {}
+    route = _normalize_route(data.get("route", ""))
+
+    if not route:
+        return jsonify({"error": "route is required"}), 400
+
+    mapping = RouteMapping.query.filter_by(route=route).first()
+
+    if not mapping:
+        return jsonify({"error": "No mapping record for this route"}), 404
+    if not mapping.is_mapping_active:
+        return jsonify({"error": "No active mapping session"}), 400
+
+    raw = mapping.raw_points or []
+    if len(raw) < 2:
+        # Not enough points — reset without saving polyline
+        mapping.is_mapping_active = False
+        mapping.raw_points        = None
+        mapping.updated_at        = datetime.utcnow()
+        db.session.commit()
+        logger.warning("[mapping] route=%r stopped with too few points (%d)", route, len(raw))
+        return jsonify({
+            "status":      "ok",
+            "route":       route,
+            "point_count": len(raw),
+            "polyline":    None,
+            "message":     "Too few points recorded — mapping discarded",
+        })
+
+    # Encode and store
+    polyline_str          = _encode_polyline(raw)
+    mapping.polyline      = polyline_str
+    mapping.raw_points    = None
+    mapping.is_mapping_active  = False
+    mapping.is_mapping_allowed = False   # require admin to re-enable for next update
+    mapping.version       += 1
+    mapping.updated_at    = datetime.utcnow()
+    db.session.commit()
+
+    logger.info(
+        "[mapping] route=%r completed — %d points → polyline len=%d, version=%d",
+        route, len(raw), len(polyline_str), mapping.version
+    )
+
+    return jsonify({
+        "status":      "ok",
+        "route":       route,
+        "point_count": len(raw),
+        "polyline":    polyline_str,
+        "version":     mapping.version,
+        "message":     f"Route recorded — {len(raw)} points compressed to polyline",
+    })
+
+
+# ─────────────────────────────────────────────
+# ROUTE MAPPING — PUBLIC READ ENDPOINT
+# ─────────────────────────────────────────────
+
+@app.route("/get-route-mapping")
+def get_route_mapping():
+    """
+    GET /get-route-mapping?route=22
+
+    Returns the stored polyline for a route.
+    Used by the student/admin map view to draw the recorded path.
+
+    Response (found):    { "route": "22", "polyline": "...", "version": 3 }
+    Response (not found):{ "route": "22", "polyline": null,  "version": 0 }
+    """
+    route   = _normalize_route(request.args.get("route", ""))
+    mapping = RouteMapping.query.filter_by(route=route).first() if route else None
+
+    return jsonify({
+        "route":    route,
+        "polyline": mapping.polyline if mapping else None,
+        "version":  mapping.version  if mapping else 0,
+        "bus_route": mapping.bus_route if mapping else "",
+    })
+
+
+# ─────────────────────────────────────────────
 # END TRIP
 # ─────────────────────────────────────────────
 
@@ -1900,5 +2311,3 @@ def onboard():
         logger.error("[onboard] ERROR: %s", e)
         db.session.rollback()
         return jsonify({"error": "onboard update failed"}), 500
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)

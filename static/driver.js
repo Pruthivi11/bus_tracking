@@ -422,3 +422,199 @@ function showFieldError(inputEl, message) {
   inputEl.placeholder = message;
   setTimeout(() => { inputEl.placeholder = orig; }, 2500);
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 5: ROUTE MAPPING
+//
+// The mapping card (#mappingCard) is hidden by default.
+// After the driver enters a route number, checkMappingPermission()
+// calls GET /driver/mapping-status?route=X. If the admin has
+// enabled mapping, the card becomes visible.
+//
+// The driver taps "Start Mapping" → POST /driver/start-mapping.
+// From that point, every /location POST on the backend
+// automatically appends GPS points (smart-compressed to ≥15 m).
+// No additional frontend calls are needed during mapping.
+//
+// The driver taps "Stop & Save" → POST /driver/stop-mapping.
+// The backend encodes all collected points as a polyline and
+// clears raw_points. The card resets to its initial state.
+// ═══════════════════════════════════════════════════════════════
+
+const mappingCard       = document.getElementById("mappingCard");
+const mappingBadge      = document.getElementById("mappingBadge");
+const mappingHint       = document.getElementById("mappingHint");
+const mappingStats      = document.getElementById("mappingStats");
+const startMappingBtn   = document.getElementById("startMappingBtn");
+const startMappingLabel = document.getElementById("startMappingLabel");
+const stopMappingBtn    = document.getElementById("stopMappingBtn");
+
+let mappingActive = false;
+
+/**
+ * Called whenever the route number changes (input/blur on #routeNo).
+ * Checks whether the admin has allowed mapping for this route and
+ * shows/hides the mapping card accordingly.
+ */
+async function checkMappingPermission() {
+  const routeNo = routeNoInput.value.trim().toUpperCase();
+  if (!routeNo) {
+    mappingCard.classList.remove("visible");
+    return;
+  }
+
+  try {
+    const res  = await fetch(`${BASE_URL}/driver/mapping-status?route=${encodeURIComponent(routeNo)}`);
+    const data = await res.json();
+
+    if (!data.allowed) {
+      mappingCard.classList.remove("visible");
+      return;
+    }
+
+    // Mapping is permitted — show the card and set its state
+    mappingCard.classList.add("visible");
+
+    if (data.is_active) {
+      _setMappingUI("active", data.point_count);
+    } else if (data.has_polyline) {
+      startMappingLabel.textContent = "Update Mapping";
+      _setMappingUI("idle", 0, true);
+    } else {
+      startMappingLabel.textContent = "Start Mapping";
+      _setMappingUI("idle", 0, false);
+    }
+
+    console.log("[mapping] status for route", routeNo, data);
+  } catch (err) {
+    console.error("[mapping] status check failed:", err);
+    mappingCard.classList.remove("visible");
+  }
+}
+
+/**
+ * Update the mapping card UI state.
+ * @param {"idle"|"active"|"done"} state
+ * @param {number} pointCount
+ * @param {boolean} [hasPoly]
+ */
+function _setMappingUI(state, pointCount = 0, hasPoly = false) {
+  mappingCard.classList.remove("rm-mapping-active");
+
+  if (state === "active") {
+    mappingActive = true;
+    mappingCard.classList.add("rm-mapping-active");
+    mappingBadge.textContent = "Recording…";
+    mappingBadge.className   = "rm-driver-badge rm-badge-recording";
+    mappingHint.textContent  = "Drive the full route. GPS points are saved automatically.";
+    mappingStats.textContent = pointCount > 0 ? `${pointCount} points recorded` : "";
+    startMappingBtn.disabled = true;
+    stopMappingBtn.disabled  = false;
+
+  } else if (state === "done") {
+    mappingActive = false;
+    mappingBadge.textContent = "Saved ✓";
+    mappingBadge.className   = "rm-driver-badge rm-badge-mapped";
+    mappingHint.textContent  = "Route saved successfully.";
+    startMappingBtn.disabled = false;
+    stopMappingBtn.disabled  = true;
+
+  } else {
+    mappingActive = false;
+    mappingBadge.textContent = hasPoly ? `v${0} — ready to update` : "Ready";
+    mappingBadge.className   = hasPoly
+      ? "rm-driver-badge rm-badge-allowed"
+      : "rm-driver-badge";
+    mappingHint.textContent  = hasPoly
+      ? "Admin has enabled re-recording. Drive the full route to update."
+      : "Admin has enabled route recording. Drive the full route, then stop.";
+    mappingStats.textContent = "";
+    startMappingBtn.disabled = false;
+    stopMappingBtn.disabled  = true;
+  }
+}
+
+/** Start a mapping session. */
+async function startMapping() {
+  const routeNo = routeNoInput.value.trim().toUpperCase();
+  if (!routeNo) {
+    alert("Enter a route number first.");
+    return;
+  }
+
+  startMappingBtn.disabled = true;
+
+  try {
+    const res  = await fetch(`${BASE_URL}/driver/start-mapping`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ route: routeNo }),
+    });
+    const data = await res.json();
+
+    if (data.status === "ok") {
+      _setMappingUI("active", 0);
+      console.log("[mapping] started for route:", routeNo);
+    } else {
+      startMappingBtn.disabled = false;
+      alert(data.error || "Could not start mapping.");
+    }
+  } catch (err) {
+    startMappingBtn.disabled = false;
+    console.error("[mapping] start failed:", err);
+    alert("Network error — could not start mapping.");
+  }
+}
+
+/** Stop the mapping session and save the polyline. */
+async function stopMapping() {
+  const routeNo = routeNoInput.value.trim().toUpperCase();
+  stopMappingBtn.disabled = true;
+
+  try {
+    const res  = await fetch(`${BASE_URL}/driver/stop-mapping`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ route: routeNo }),
+    });
+    const data = await res.json();
+
+    if (data.status === "ok") {
+      const msg = data.message || `Route saved — ${data.point_count} points`;
+      console.log("[mapping] stopped:", data);
+
+      if (data.polyline) {
+        mappingStats.textContent = `${data.point_count} points → polyline saved (v${data.version})`;
+        _setMappingUI("done", data.point_count);
+      } else {
+        // Too few points
+        mappingStats.textContent = data.message || "Not enough points recorded";
+        _setMappingUI("idle", 0, false);
+      }
+
+      alert(msg);
+    } else {
+      stopMappingBtn.disabled = false;
+      alert(data.error || "Could not stop mapping.");
+    }
+  } catch (err) {
+    stopMappingBtn.disabled = false;
+    console.error("[mapping] stop failed:", err);
+    alert("Network error — could not stop mapping.");
+  }
+}
+
+// Hook into route number input events to check mapping permission
+routeNoInput.addEventListener("input",  () => {
+  clearTimeout(_routeNoDebounce);
+  _routeNoDebounce = setTimeout(() => {
+    fetchRouteRecommendation();
+    checkMappingPermission();
+  }, 400);
+});
+
+routeNoInput.addEventListener("blur", () => {
+  fetchRouteRecommendation();
+  checkMappingPermission();
+});
