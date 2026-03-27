@@ -43,6 +43,9 @@
       <button class="admin-tab tab-mapping" onclick="switchTab('mapping')">
         <i class="fa-solid fa-route"></i> Route Mapping
       </button>
+      <button class="admin-tab tab-busroutes" onclick="switchTab('busroutes')">
+        <i class="fa-solid fa-map-location-dot"></i> Bus Routes
+      </button>
     </div>
 
     <!-- ═══════════════════════════════════════════
@@ -246,6 +249,72 @@
 
     </div><!-- /panel-mapping -->
 
+
+    <!-- ═══════════════════════════════════════════
+         TAB 4: BUS ROUTES  (manage bus_details table)
+         ═══════════════════════════════════════════ -->
+    <div id="panel-busroutes" class="tab-panel">
+
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Bus Routes</h1>
+          <p>Manage route numbers and their area names</p>
+        </div>
+      </div>
+
+      <!-- Add route form -->
+      <div class="dm-add-card">
+        <h3>
+          <i class="fa-solid fa-plus icon-add-driver"></i>
+          Add New Route
+        </h3>
+        <div class="dm-form-row">
+          <input id="brAddNo"    class="dm-input" type="text"
+                 placeholder="Route number (e.g. 22)" autocomplete="off">
+          <input id="brAddArea"  class="dm-input" type="text"
+                 placeholder="Route area (e.g. Karayanchavadi)" autocomplete="off">
+          <button class="btn-add-driver" onclick="brAddRoute()">
+            <i class="fa-solid fa-plus"></i> Add Route
+          </button>
+        </div>
+      </div>
+
+      <!-- Search + count -->
+      <div class="dm-toolbar">
+        <div class="dm-search-wrap">
+          <i class="fa-solid fa-magnifying-glass dm-search-icon"></i>
+          <input id="brSearch" class="dm-search" type="search"
+                 placeholder="Search by route no or area…"
+                 oninput="brOnSearch()" autocomplete="off">
+        </div>
+        <div class="dm-filter-row">
+          <span class="dm-count-label" id="brCount"></span>
+        </div>
+      </div>
+
+      <!-- Route list -->
+      <div class="dm-list-card">
+        <div class="dm-list-header">
+          <span>#</span>
+          <span>Route No</span>
+          <span>Area</span>
+          <span>Actions</span>
+        </div>
+        <div id="brListBody">
+          <div class="dm-empty">
+            <i class="fa-solid fa-map-location-dot"></i>
+            <p>Loading routes…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="dm-pagination" id="brPagination"></div>
+
+      <!-- Confirm overlay (reuses existing overlay) -->
+
+    </div><!-- /panel-busroutes -->
+
   </main>
 
   <footer>&copy; 2026 Commute Assistant</footer>
@@ -287,8 +356,185 @@
       _driversLoaded = true;
     }
     if (tab === 'mapping') loadMappingData();
+    if (tab === 'busroutes' && !_brLoaded) { brLoadRoutes(1); _brLoaded = true; }
   }
   let _driversLoaded = false;
+  let _brLoaded      = false;
+
+
+  // ══════════════════════════════════════════════
+  // BUS ROUTES CRUD
+  // Wraps existing /admin/bus-routes* endpoints.
+  // ══════════════════════════════════════════════
+
+  let _brPage         = 1;
+  let _brSearchTimer  = null;
+
+  function brOnSearch() {
+    clearTimeout(_brSearchTimer);
+    _brSearchTimer = setTimeout(() => brLoadRoutes(1), 300);
+  }
+
+  function brChangePage(delta) {
+    brLoadRoutes(_brPage + delta);
+  }
+
+  function brLoadRoutes(page = 1) {
+    _brPage          = page;
+    const search     = (document.getElementById('brSearch')?.value || '').trim();
+    const body       = document.getElementById('brListBody');
+    body.innerHTML   = '<div class="dm-loading"><div class="spinner"></div></div>';
+
+    const params = new URLSearchParams({ page, limit: 15, search });
+    fetch(`/admin/bus-routes?${params}`)
+      .then(r => r.json())
+      .then(data => brRenderList(data))
+      .catch(() => {
+        body.innerHTML = '<div class="dm-empty"><p>Failed to load routes.</p></div>';
+      });
+  }
+
+  function brRenderList(data) {
+    const body = document.getElementById('brListBody');
+    const routes = data.routes || [];
+    document.getElementById('brCount').textContent =
+      `${data.total || 0} route${(data.total || 0) !== 1 ? 's' : ''}`;
+
+    if (routes.length === 0) {
+      body.innerHTML = `
+        <div class="dm-empty">
+          <i class="fa-solid fa-map-location-dot"></i>
+          <p>No routes found.</p>
+        </div>`;
+      document.getElementById('brPagination').innerHTML = '';
+      return;
+    }
+
+    const start = ((_brPage - 1) * 15) + 1;
+    body.innerHTML = routes.map((r, i) => `
+      <div class="dm-row" id="br-row-${r.id}">
+        <span class="dm-cell-num">${start + i}</span>
+        <span class="dm-cell-main" id="br-no-${r.id}">${escHtml(r.bus_no)}</span>
+        <span class="dm-cell-sub"  id="br-area-${r.id}">${escHtml(r.bus_route)}</span>
+        <span class="dm-cell-actions">
+          <button class="btn-edit-sm"   onclick="brStartEdit(${r.id})">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+          <button class="btn-del-sm"    onclick="brAskDelete(${r.id}, '${escHtml(r.bus_no)}')">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </span>
+      </div>`).join('');
+
+    // Pagination
+    const total = data.total_pages || 1;
+    const pag   = document.getElementById('brPagination');
+    pag.innerHTML = total <= 1 ? '' : `
+      <button class="dm-page-btn" onclick="brChangePage(-1)" ${_brPage <= 1 ? 'disabled' : ''}>
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+      <span class="dm-page-info">Page ${_brPage} of ${total}</span>
+      <button class="dm-page-btn" onclick="brChangePage(1)" ${_brPage >= total ? 'disabled' : ''}>
+        <i class="fa-solid fa-chevron-right"></i>
+      </button>`;
+  }
+
+  function brAddRoute() {
+    const no   = (document.getElementById('brAddNo')?.value   || '').trim();
+    const area = (document.getElementById('brAddArea')?.value || '').trim();
+    if (!no || !area) { showToast('Enter both route number and area', 'error'); return; }
+
+    fetch('/admin/bus-routes/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bus_no: no, bus_route: area }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast(`Route ${no} added`);
+        document.getElementById('brAddNo').value   = '';
+        document.getElementById('brAddArea').value = '';
+        brLoadRoutes(1);
+      })
+      .catch(() => showToast('Failed to add route', 'error'));
+  }
+
+  let _brEditId = null;
+
+  function brStartEdit(id) {
+    if (_brEditId !== null) brCancelEdit();
+    _brEditId = id;
+
+    const noEl   = document.getElementById(`br-no-${id}`);
+    const areaEl = document.getElementById(`br-area-${id}`);
+    const noVal  = noEl.textContent.trim();
+    const arVal  = areaEl.textContent.trim();
+
+    noEl.innerHTML   = `<input class="dm-input-inline" id="br-edit-no-${id}"   value="${escHtml(noVal)}">`;
+    areaEl.innerHTML = `<input class="dm-input-inline" id="br-edit-area-${id}" value="${escHtml(arVal)}">`;
+
+    const actEl = document.querySelector(`#br-row-${id} .dm-cell-actions`);
+    actEl.innerHTML = `
+      <button class="btn-edit-sm" onclick="brSaveEdit(${id})">
+        <i class="fa-solid fa-check"></i>
+      </button>
+      <button class="btn-del-sm"  onclick="brCancelEdit()">
+        <i class="fa-solid fa-xmark"></i>
+      </button>`;
+  }
+
+  function brCancelEdit() {
+    _brEditId = null;
+    brLoadRoutes(_brPage);
+  }
+
+  function brSaveEdit(id) {
+    const no   = (document.getElementById(`br-edit-no-${id}`)?.value   || '').trim();
+    const area = (document.getElementById(`br-edit-area-${id}`)?.value || '').trim();
+    if (!no || !area) { showToast('Both fields required', 'error'); return; }
+
+    fetch(`/admin/bus-routes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bus_no: no, bus_route: area }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast('Route updated');
+        _brEditId = null;
+        brLoadRoutes(_brPage);
+      })
+      .catch(() => showToast('Failed to update', 'error'));
+  }
+
+  let _brDeleteId = null;
+
+  function brAskDelete(id, no) {
+    _brDeleteId = id;
+    const overlay = document.getElementById('confirmOverlay');
+    document.getElementById('confirmMsg').textContent =
+      `Delete route "${no}"? This cannot be undone.`;
+    overlay.classList.add('visible');
+    // Hijack confirm button temporarily
+    document.getElementById('confirmBtn').onclick = brConfirmDelete;
+  }
+
+  function brConfirmDelete() {
+    if (_brDeleteId === null) return;
+    closeConfirm();
+
+    fetch(`/admin/bus-routes/${_brDeleteId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        showToast('Route deleted');
+        _brDeleteId = null;
+        brLoadRoutes(_brPage);
+      })
+      .catch(() => showToast('Failed to delete', 'error'));
+  }
 
 
   // ── Toast ──────────────────────────────────────

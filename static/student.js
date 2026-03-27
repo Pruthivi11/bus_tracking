@@ -306,11 +306,33 @@ function toggleMorningDistance(metres, chipEl) {
     : `${n} selected`;
 }
 
-// Wire up all morning chips
-document.querySelectorAll(".morn-chip").forEach(chip => {
-  const metres = parseInt(chip.dataset.metres, 10);
-  chip.addEventListener("click", () => toggleMorningDistance(metres, chip));
-});
+// Wire up all morning chips inside DOMContentLoaded so wiring is
+// guaranteed even if the script executes before all elements are parsed
+// (belt-and-suspenders — the script tag is after the HTML in practice).
+function _wireMornChips() {
+  document.querySelectorAll(".morn-chip").forEach(chip => {
+    const metres = parseInt(chip.dataset.metres, 10);
+    // Remove any previous listener clone to prevent double-firing
+    const newChip = chip.cloneNode(true);
+    chip.parentNode.replaceChild(newChip, chip);
+    newChip.addEventListener("click", () => toggleMorningDistance(metres, newChip));
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", _wireMornChips);
+} else {
+  _wireMornChips();   // DOM already parsed
+}
+
+// Request browser notification permission once on init.
+// Used by triggerMorningAlert() to fire native notifications.
+// Must be called in a user-gesture context on some browsers —
+// doing it at script load is a best-effort approach; it will
+// silently fail if the browser requires a gesture.
+if ("Notification" in window && Notification.permission === "default") {
+  Notification.requestPermission().catch(() => {});
+}
 
 /**
  * Clear the morningFiredDistances set AND remove .morn-fired visual state
@@ -383,9 +405,19 @@ function checkMorningProximityAlerts(bus, studentLat, studentLng) {
       // ── In-page toast ──
       showProximityToast(`🚍 Bus is within ${label} — get ready!`);
 
-      // ── Bug 3 fix: vibration feedback on mobile ──
+      // ── Vibration feedback on mobile ──
       if (navigator.vibrate) {
         navigator.vibrate([200, 100, 200]);
+      }
+
+      // ── Browser notification (works when page is in background) ──
+      if ("Notification" in window && Notification.permission === "granted") {
+        try {
+          new Notification("Bus Alert 🚍", {
+            body: `Bus is within ${label} of your location`,
+            icon: "/static/favicon.ico",
+          });
+        } catch (_e) { /* some browsers block non-secure-context notifications */ }
       }
 
       console.log(`[morning-alert] ✅ FIRED: ${label} (dist=${dist.toFixed(0)}m)`);
@@ -416,10 +448,10 @@ function setStatus(text) {
 // BUS STATUS TEXT
 // ─────────────────────────────────────────────
 function updateBusStatus(bus, busNo) {
-  // backend `active` is the single source of truth — no secondary time check here.
-  // is_bus_active() on the backend already applies the threshold; duplicating it
-  // here with a different value (60s vs 300s) created false "not active" reports.
-  if (!bus.active) {
+  // backend `active` flag is the primary truth.
+  // Additionally, if lastSeen > 60s the driver has likely stopped without
+  // calling end_trip — show as inactive rather than stuck "updating…"
+  if (!bus.active || bus.lastSeen > 60) {
     setStatus(`🔴 Bus ${busNo} is not active`);
   } else if (bus.lastSeen > 20) {
     setStatus(`🟡 Bus ${busNo} updating…`);
@@ -903,6 +935,9 @@ let _lastStudentLng = null;
 
 /** Single polling tick — reads the last known student position. */
 function _pollTick() {
+  console.log("[poll] running — busNo:", busNoEl.value.trim().toUpperCase(),
+    "| alarm:", morningAlarmEnabled,
+    "| thresholds:", [...morningSelectedDistances]);
   loadBusLocations(_lastStudentLat, _lastStudentLng);
 }
 
@@ -967,7 +1002,7 @@ async function loadBusLocations(studentLat, studentLng) {
     return;
   }
 
-  if (!matchingBus.active) {
+  if (!matchingBus.active || matchingBus.lastSeen > 60) {
     if (busMarkers[matchingBus.route]) {
       busMarkers[matchingBus.route].remove();
       delete busMarkers[matchingBus.route];
