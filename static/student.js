@@ -234,6 +234,11 @@ function checkProximityAlerts(bus) {
         : `${threshold} m`;
 
       showProximityToast(`🔔 Bus is within ${label} of your stop!`);
+
+      // ── System notification + vibration (evening mode) ──
+      sendNotification(`Bus is near your stop (${label})`);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
       console.log(`[proximity] alert fired: ${label} (dist=${dist.toFixed(0)}m)`);
     }
   }
@@ -277,6 +282,8 @@ pickupAlarmBtn?.addEventListener("click", () => {
     _clearMornFired();
     console.log("[morning-alert] alarm disabled — fired set cleared");
   } else {
+    // Request permission on this user gesture so the browser prompt appears
+    _requestNotificationPermission();
     console.log("[morning-alert] alarm enabled");
   }
 });
@@ -327,12 +334,55 @@ if (document.readyState === "loading") {
 
 // Request browser notification permission once on init.
 // Used by triggerMorningAlert() to fire native notifications.
-// Must be called in a user-gesture context on some browsers —
-// doing it at script load is a best-effort approach; it will
-// silently fail if the browser requires a gesture.
-if ("Notification" in window && Notification.permission === "default") {
-  Notification.requestPermission().catch(() => {});
+// ─────────────────────────────────────────────
+// NOTIFICATION SYSTEM
+//
+// _requestNotificationPermission() MUST be called from a direct user
+// gesture (button click). Browsers silently ignore requestPermission()
+// at page load — the permission prompt never appears, Notification.permission
+// stays "default", and no alerts ever fire.
+//
+// Gesture trigger points used in this file:
+//   pickupAlarmBtn click  — morning alarm toggle (user opts in explicitly)
+//   showBtn click         — Show Map button (covers evening mode too)
+//
+// sendNotification(message) is the single call site for both modes.
+// ─────────────────────────────────────────────
+
+function _requestNotificationPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") return;
+  if (Notification.permission === "denied")  return;  // user refused — don't re-ask
+  Notification.requestPermission().then(p => {
+    console.log("[notification] permission:", p);
+  }).catch(() => {});
 }
+
+/**
+ * Send a system notification. Checks support and permission before firing.
+ * Logs every attempt so failures are visible in DevTools.
+ * @param {string} message
+ */
+function sendNotification(message) {
+  console.log("[notification] attempt:", message,
+    "| permission:", ("Notification" in window) ? Notification.permission : "unsupported");
+
+  if (!("Notification" in window)) {
+    console.log("[notification] API not supported");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    try {
+      new Notification("Bus Alert", { body: message, icon: "/static/favicon.ico" });
+      console.log("[notification] sent");
+    } catch (err) {
+      console.error("[notification] failed:", err);
+    }
+  } else {
+    console.log("[notification] not granted — toast only");
+  }
+}
+
 
 /**
  * Clear the morningFiredDistances set AND remove .morn-fired visual state
@@ -410,17 +460,10 @@ function checkMorningProximityAlerts(bus, studentLat, studentLng) {
         navigator.vibrate([200, 100, 200]);
       }
 
-      // ── Browser notification (works when page is in background) ──
-      if ("Notification" in window && Notification.permission === "granted") {
-        try {
-          new Notification("Bus Alert 🚍", {
-            body: `Bus is within ${label} of your location`,
-            icon: "/static/favicon.ico",
-          });
-        } catch (_e) { /* some browsers block non-secure-context notifications */ }
-      }
+      // ── System notification ──
+      sendNotification(`Bus is within ${label}`);
 
-      console.log(`[morning-alert] ✅ FIRED: ${label} (dist=${dist.toFixed(0)}m)`);
+      console.log(`[morning-alert] FIRED: ${label} (dist=${dist.toFixed(0)}m)`);
     }
   }
 }
@@ -621,6 +664,9 @@ function onSuggestionClick(item) {
   // Route changed — clear morning fired set + chip visuals so thresholds can re-trigger
   _clearMornFired();
 
+  // Redraw stored route path if evening mode and map is already open
+  if (tripMode === "evening" && map) loadRoutePath(item.route_no);
+
   searchClearBtn.classList.add("visible");
   hideSearchDropdown();
   studentSearchEl.blur();
@@ -704,6 +750,90 @@ function initMap(center) {
 
     document.getElementById("proximityBox").classList.add("visible");
   });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ROUTE PATH VISUALIZATION  (Evening mode only)
+//
+// When a route is selected in evening mode and the map is opened,
+// the recorded GPS path is fetched from GET /get-route-mapping
+// (which returns a decoded {lat,lng} array) and drawn as a blue
+// line on the Mapbox map.
+//
+// Mapbox GL layers are attached to the map style — they must be
+// added after the style loads. drawRouteOnMap() defers via
+// map.once("load") when isStyleLoaded() is false.
+//
+// clearRouteLine() is called on route change and session reset.
+// ═══════════════════════════════════════════════════════════════════
+
+const ROUTE_LINE_SOURCE = "routeLine";
+const ROUTE_LINE_LAYER  = "routeLine";
+
+/** Remove the route line layer + source. Safe when absent. */
+function clearRouteLine() {
+  if (!map) return;
+  try {
+    if (map.getLayer(ROUTE_LINE_LAYER))   map.removeLayer(ROUTE_LINE_LAYER);
+    if (map.getSource(ROUTE_LINE_SOURCE)) map.removeSource(ROUTE_LINE_SOURCE);
+  } catch (_e) {}
+}
+
+/**
+ * Draw a LineString on the map from an array of {lat, lng} objects.
+ * Defers until the Mapbox style is ready.
+ * @param {{ lat: number, lng: number }[]} coords
+ */
+function drawRouteOnMap(coords) {
+  if (!map || coords.length < 2) return;
+
+  const geojson = {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: coords.map(c => [c.lng, c.lat]),
+    },
+  };
+
+  const _draw = () => {
+    clearRouteLine();
+    map.addSource(ROUTE_LINE_SOURCE, { type: "geojson", data: geojson });
+    map.addLayer({
+      id:     ROUTE_LINE_LAYER,
+      type:   "line",
+      source: ROUTE_LINE_SOURCE,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint:  { "line-color": "#0a6cdc", "line-width": 4, "line-opacity": 0.75 },
+    });
+    console.log(`[route-path] drawn — ${coords.length} coordinates`);
+  };
+
+  if (map.isStyleLoaded()) { _draw(); } else { map.once("load", _draw); }
+}
+
+/**
+ * Fetch the recorded route path and draw it on the map.
+ * No-op outside evening mode or when map is not initialised.
+ * @param {string} routeNo
+ */
+async function loadRoutePath(routeNo) {
+  if (tripMode !== "evening" || !routeNo || !map) return;
+  try {
+    const res  = await fetch(
+      `${BASE_URL}/get-route-mapping?route=${encodeURIComponent(routeNo)}`
+    );
+    const data = await res.json();
+    if (data.coordinates && data.coordinates.length >= 2) {
+      drawRouteOnMap(data.coordinates);
+      console.log(`[route-path] route=${routeNo} — ${data.coordinates.length} pts`);
+    } else {
+      clearRouteLine();
+      console.log(`[route-path] no recorded path for route=${routeNo}`);
+    }
+  } catch (err) {
+    console.error("[route-path] fetch failed:", err);
+  }
 }
 
 
@@ -910,6 +1040,7 @@ function resetPollingState() {
   isOnboard        = false;
   // Clear morning fired set + chip visuals so all thresholds fire fresh this session
   _clearMornFired();
+  clearRouteLine();
   console.log("[polling] state reset");
 }
 
@@ -1077,6 +1208,9 @@ showBtn.addEventListener("click", () => {
   if (!map) initMap([80.2707, 13.0827]);
   map.resize();
 
+  // Request notification permission on this user gesture (covers both modes)
+  _requestNotificationPermission();
+
   // Reset all polling and onboard state for a clean tracking session
   resetPollingState();
 
@@ -1105,4 +1239,9 @@ showBtn.addEventListener("click", () => {
   _pollTick();
   pollingTimer = setInterval(_pollTick, pollingInterval);
   console.log(`[polling] started — initial interval ${pollingInterval / 1000}s`);
+
+  // Draw stored route path on map (evening mode only)
+  if (tripMode === "evening" && selectedRoute) {
+    loadRoutePath(selectedRoute.route_no);
+  }
 });

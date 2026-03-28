@@ -66,3 +66,7 @@
 2026-03-23 19:54:28,464 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 19:54:28] "POST /send_otp HTTP/1.1" 200 -
 2026-03-23 20:02:23,731 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 20:02:23] "POST /send_otp HTTP/1.1" 200 -
 2026-03-23 20:05:31,816 INFO [werkzeug] 192.168.0.100 - - [23/Mar/2026 20:05:31] "POST /send_otp HTTP/1.1" 200 -
+2026-03-27 12:14:45,631 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-27 12:14:45,632 INFO [commute] [redis] REDIS_URL not set — running without cache
+2026-03-27 12:15:15,847 INFO [commute] Rate limiter enabled (storage: memory)
+2026-03-27 12:15:15,848 INFO [commute] [redis] REDIS_URL not set — running without cache

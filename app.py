@@ -596,6 +596,46 @@ def _should_record_point(raw_points: list,
     return False
 
 
+
+def _decode_polyline(polyline_str: str) -> list:
+    """
+    Decode a Google Encoded Polyline string to a list of [lat, lng] pairs.
+    Inverse of _encode_polyline.  Used by /get-route-mapping so the
+    frontend receives a plain coordinate array with no JS decoder needed.
+    """
+    result  = []
+    index   = 0
+    lat     = 0
+    lng     = 0
+    n       = len(polyline_str)
+
+    while index < n:
+        shift, val = 0, 0
+        while True:
+            b     = ord(polyline_str[index]) - 63
+            index += 1
+            val   |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(val >> 1) if (val & 1) else (val >> 1)
+        lat += dlat
+
+        shift, val = 0, 0
+        while True:
+            b     = ord(polyline_str[index]) - 63
+            index += 1
+            val   |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlng = ~(val >> 1) if (val & 1) else (val >> 1)
+        lng += dlng
+
+        result.append([lat / 1e5, lng / 1e5])
+
+    return result
+
 def _encode_polyline(points: list) -> str:
     """
     Encode a list of [lat, lng] pairs using the Google Encoded Polyline Algorithm.
@@ -2219,20 +2259,32 @@ def get_route_mapping():
     """
     GET /get-route-mapping?route=22
 
-    Returns the stored polyline for a route.
-    Used by the student/admin map view to draw the recorded path.
+    Returns the recorded route path as a decoded coordinate array so the
+    frontend needs no polyline decoder.
 
-    Response (found):    { "route": "22", "polyline": "...", "version": 3 }
-    Response (not found):{ "route": "22", "polyline": null,  "version": 0 }
+    Response (found):
+      { "route":"22", "bus_route":"Karayanchavadi", "version":3,
+        "coordinates":[{"lat":13.04,"lng":80.11}, ...] }
+
+    Response (not found):
+      { "route":"22", "bus_route":"", "version":0, "coordinates":[] }
     """
     route   = _normalize_route(request.args.get("route", ""))
     mapping = RouteMapping.query.filter_by(route=route).first() if route else None
 
+    coordinates = []
+    if mapping and mapping.polyline:
+        try:
+            raw = _decode_polyline(mapping.polyline)
+            coordinates = [{"lat": p[0], "lng": p[1]} for p in raw]
+        except Exception as e:
+            logger.warning("[get-route-mapping] decode error route=%r: %s", route, e)
+
     return jsonify({
-        "route":    route,
-        "polyline": mapping.polyline if mapping else None,
-        "version":  mapping.version  if mapping else 0,
-        "bus_route": mapping.bus_route if mapping else "",
+        "route":       route,
+        "bus_route":   mapping.bus_route if mapping else "",
+        "version":     mapping.version   if mapping else 0,
+        "coordinates": coordinates,
     })
 
 
