@@ -392,5 +392,22 @@
   -->
   <div id="proximityToast" class="prox-toast" role="alert" aria-live="assertive"></div>
 
+  <!--
+    Wake-up alert screen — full-screen overlay shown when bus crosses
+    a proximity threshold. Adapted from Nayaruvi Bus Stop Alert (working reference).
+    Hidden by default; shown by triggerUnifiedAlert() in student.js.
+    Dismissed by #alertDismissBtn which also stops audio.
+  -->
+  <div id="wakeUpScreen" class="alert-wake-screen" role="alertdialog" aria-modal="true" aria-label="Bus proximity alert">
+    <div class="alert-pulse-ring">
+      <i class="fa-solid fa-bus-simple alert-wake-icon"></i>
+    </div>
+    <h1 class="alert-wake-title">Bus is close!</h1>
+    <p class="alert-wake-body" id="alertWakeBody">Get ready — bus is approaching.</p>
+    <button id="alertDismissBtn" class="alert-dismiss-btn" type="button">
+      <i class="fa-solid fa-check"></i> Got it
+    </button>
+  </div>
+
 </body>
 </html>

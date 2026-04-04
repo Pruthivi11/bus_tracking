@@ -235,9 +235,8 @@ function checkProximityAlerts(bus) {
 
       showProximityToast(`🔔 Bus is within ${label} of your stop!`);
 
-      // ── System notification + vibration (evening mode) ──
-      sendNotification(`Bus is near your stop (${label})`);
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      // ── Unified alert (audio + overlay + vibration + notification) ──
+      triggerUnifiedAlert(`Bus is near your stop (${label})`);
 
       console.log(`[proximity] alert fired: ${label} (dist=${dist.toFixed(0)}m)`);
     }
@@ -282,8 +281,9 @@ pickupAlarmBtn?.addEventListener("click", () => {
     _clearMornFired();
     console.log("[morning-alert] alarm disabled — fired set cleared");
   } else {
-    // Request permission on this user gesture so the browser prompt appears
+    // Request permission + init audio on this user gesture
     _requestNotificationPermission();
+    _initAudio();
     console.log("[morning-alert] alarm enabled");
   }
 });
@@ -332,55 +332,149 @@ if (document.readyState === "loading") {
   _wireMornChips();   // DOM already parsed
 }
 
-// Request browser notification permission once on init.
-// Used by triggerMorningAlert() to fire native notifications.
-// ─────────────────────────────────────────────
-// NOTIFICATION SYSTEM
+
+// ═══════════════════════════════════════════════════════════════════
+// ALERT SYSTEM  (adapted from Nayaruvi Bus Stop Alert — working reference)
 //
-// _requestNotificationPermission() MUST be called from a direct user
-// gesture (button click). Browsers silently ignore requestPermission()
-// at page load — the permission prompt never appears, Notification.permission
-// stays "default", and no alerts ever fire.
+// triggerUnifiedAlert(message) is the SINGLE call site for both morning
+// and evening proximity alerts. It fires:
+//   1. Full-screen wake-up overlay (#wakeUpScreen)
+//   2. Audio  — loops alert.mp3, falls back to synthesized chime
+//   3. Vibration  [500, 200, 500, 200, 500]
+//   4. Web Notification API (works when tab is in background)
 //
-// Gesture trigger points used in this file:
-//   pickupAlarmBtn click  — morning alarm toggle (user opts in explicitly)
-//   showBtn click         — Show Map button (covers evening mode too)
+// showProximityToast() is kept alongside for the in-page confirmation.
 //
-// sendNotification(message) is the single call site for both modes.
-// ─────────────────────────────────────────────
+// Permission must be requested inside a user gesture.
+// _requestNotificationPermission() is called from:
+//   • pickupAlarmBtn click  (morning alarm toggle)
+//   • showBtn click         (Show Map — covers evening mode)
+//
+// Audio is initialized with _initAudio() on the same showBtn click
+// to satisfy the "AudioContext requires user gesture" browser rule.
+// ═══════════════════════════════════════════════════════════════════
+
+// Path to the alert MP3. Place alert.mp3 in your /static/ folder.
+// Falls back to synthesized Web Audio chime if file is missing or blocked.
+const ALERT_SOUND_URL = "/static/alert.mp3";
+
+let _audioCtx           = null;   // Web AudioContext
+let _alertAudioInstance = null;   // Audio() object for MP3 loop
+let _alertChimeInterval = null;   // setInterval handle for chime fallback
+
+/** Create AudioContext on first user gesture (browser requirement). */
+function _initAudio() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+/** Stop all alert audio — MP3 instance + chime interval. */
+function _stopAlertSound() {
+  if (_alertAudioInstance) {
+    _alertAudioInstance.pause();
+    _alertAudioInstance.currentTime = 0;
+    _alertAudioInstance = null;
+  }
+  if (_alertChimeInterval) {
+    clearInterval(_alertChimeInterval);
+    _alertChimeInterval = null;
+  }
+}
+
+/** Play a single 3-note ascending chime via Web Audio API. */
+function _playChime() {
+  if (!_audioCtx) return;
+  const now  = _audioCtx.currentTime;
+  const note = (freq, start) => {
+    const osc  = _audioCtx.createOscillator();
+    const gain = _audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.25, start + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.01, start + 1.0);
+    osc.connect(gain);
+    gain.connect(_audioCtx.destination);
+    osc.start(start);
+    osc.stop(start + 1.2);
+  };
+  note(523.25, now);          // C5
+  note(659.25, now + 0.3);    // E5
+  note(783.99, now + 0.6);    // G5
+}
+
+/** Loop the chime every 2.5 s (fallback when MP3 is unavailable). */
+function _startChimeLoop() {
+  _playChime();
+  _alertChimeInterval = setInterval(_playChime, 2500);
+}
+
+/** Try to play alert.mp3 on loop; fall back to synthesized chime. */
+function _playAlertSound() {
+  _stopAlertSound();
+  _alertAudioInstance = new Audio(ALERT_SOUND_URL);
+  _alertAudioInstance.loop = true;
+  _alertAudioInstance.play().catch(() => {
+    console.log("[alert] MP3 unavailable — synthesized chime");
+    _startChimeLoop();
+  });
+}
 
 function _requestNotificationPermission() {
   if (!("Notification" in window)) return;
   if (Notification.permission === "granted") return;
-  if (Notification.permission === "denied")  return;  // user refused — don't re-ask
+  if (Notification.permission === "denied")  return;
   Notification.requestPermission().then(p => {
     console.log("[notification] permission:", p);
   }).catch(() => {});
 }
 
-/**
- * Send a system notification. Checks support and permission before firing.
- * Logs every attempt so failures are visible in DevTools.
- * @param {string} message
- */
-function sendNotification(message) {
-  console.log("[notification] attempt:", message,
-    "| permission:", ("Notification" in window) ? Notification.permission : "unsupported");
+function _sendWebNotification(message) {
+  if (!("Notification" in window)) return;
+  console.log("[notification] permission:", Notification.permission);
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification("Bus Alert", { body: message, icon: "/static/favicon.ico" });
+    console.log("[notification] sent");
+  } catch (err) {
+    console.warn("[notification] failed:", err);
+  }
+}
 
-  if (!("Notification" in window)) {
-    console.log("[notification] API not supported");
-    return;
-  }
-  if (Notification.permission === "granted") {
-    try {
-      new Notification("Bus Alert", { body: message, icon: "/static/favicon.ico" });
-      console.log("[notification] sent");
-    } catch (err) {
-      console.error("[notification] failed:", err);
-    }
-  } else {
-    console.log("[notification] not granted — toast only");
-  }
+// Wake-up screen DOM references
+const _wakeUpScreen    = document.getElementById("wakeUpScreen");
+const _wakeUpBody      = document.getElementById("alertWakeBody");
+const _alertDismissBtn = document.getElementById("alertDismissBtn");
+
+// Dismiss handler — hides overlay and stops all audio
+_alertDismissBtn?.addEventListener("click", () => {
+  _wakeUpScreen?.classList.remove("visible");
+  _stopAlertSound();
+  console.log("[alert] dismissed");
+});
+
+/**
+ * Unified alert trigger — adapted from Nayaruvi Bus Stop Alert.
+ * The SINGLE entry point for all proximity alerts in both modes.
+ *
+ * @param {string} message  e.g. "Bus is within 500 m"
+ */
+function triggerUnifiedAlert(message) {
+  console.log("[alert] triggered:", message);
+
+  // 1. Full-screen wake-up overlay
+  if (_wakeUpBody)   _wakeUpBody.textContent = message;
+  if (_wakeUpScreen) _wakeUpScreen.classList.add("visible");
+
+  // 2. Audio loop
+  _playAlertSound();
+
+  // 3. Vibration (longer than toast-only pattern)
+  if (navigator.vibrate) navigator.vibrate([500, 200, 500, 200, 500]);
+
+  // 4. Web Notification
+  _sendWebNotification(message);
 }
 
 
@@ -453,15 +547,10 @@ function checkMorningProximityAlerts(bus, studentLat, studentLng) {
       }
 
       // ── In-page toast ──
-      showProximityToast(`🚍 Bus is within ${label} — get ready!`);
+      showProximityToast(`Bus is within ${label} — get ready!`);
 
-      // ── Vibration feedback on mobile ──
-      if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200]);
-      }
-
-      // ── System notification ──
-      sendNotification(`Bus is within ${label}`);
+      // ── Unified alert (audio + overlay + vibration + notification) ──
+      triggerUnifiedAlert(`Bus is within ${label}`);
 
       console.log(`[morning-alert] FIRED: ${label} (dist=${dist.toFixed(0)}m)`);
     }
@@ -1208,8 +1297,9 @@ showBtn.addEventListener("click", () => {
   if (!map) initMap([80.2707, 13.0827]);
   map.resize();
 
-  // Request notification permission on this user gesture (covers both modes)
+  // Request notification permission + init audio on this user gesture
   _requestNotificationPermission();
+  _initAudio();
 
   // Reset all polling and onboard state for a clean tracking session
   resetPollingState();

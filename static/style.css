@@ -3323,3 +3323,96 @@ body.page-student .student-card .card-section {
   cursor: not-allowed;
   transform: none;
 }
+
+
+/* ============================================================
+   25. WAKE-UP ALERT SCREEN
+   Adapted from Nayaruvi Bus Stop Alert (working reference project).
+   Full-screen overlay shown when bus crosses a proximity threshold.
+   Audio + vibration + notification fire simultaneously.
+   Dismissed by #alertDismissBtn.
+   ============================================================ */
+
+.alert-wake-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--blue);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 32px;
+  animation: alertFadeIn 0.4s ease both;
+}
+
+.alert-wake-screen.visible {
+  display: flex;
+}
+
+@keyframes alertFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Pulsing ring ── */
+.alert-pulse-ring {
+  width: 120px;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+  animation: alertPulse 2s ease-in-out infinite;
+}
+
+@keyframes alertPulse {
+  0%   { transform: scale(0.95); opacity: 0.8; }
+  50%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.alert-wake-icon {
+  font-size: 48px;
+  color: var(--white);
+}
+
+/* ── Text ── */
+.alert-wake-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--white);
+  margin-bottom: 10px;
+}
+
+.alert-wake-body {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.88);
+  margin-bottom: 40px;
+  line-height: 1.5;
+}
+
+/* ── Dismiss button ── */
+.alert-dismiss-btn {
+  background: var(--white);
+  color: var(--blue);
+  border: none;
+  border-radius: 50px;
+  padding: 16px 52px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+  touch-action: manipulation;
+}
+
+.alert-dismiss-btn:active { transform: scale(0.96); }
