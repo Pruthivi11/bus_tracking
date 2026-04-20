@@ -36,8 +36,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev_key")
 
 # ─────────────────────────────────────────────
 # DATABASE CONFIG
-# Change 1: Enforce DATABASE_URL — raise at startup if missing.
-#            No SQLite fallback, no silent None.
+# Enforce DATABASE_URL — raise at startup if missing.
+# No SQLite fallback, no silent None.
+# Supabase (PostgreSQL) requires SSL — sslmode=require is mandatory.
 # ─────────────────────────────────────────────
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -48,23 +49,29 @@ if not DATABASE_URL:
         "Set it to a PostgreSQL connection string before starting the app."
     )
 
-# Render.com historically returned postgres:// — normalise to postgresql://
+# Normalise postgres:// → postgresql:// (Render + Supabase both use the older prefix)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"]    = DATABASE_URL
+app.config["SQLALCHEMY_DATABASE_URI"]        = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Change 1: Connection pooling — prevents connection exhaustion under load.
+# Connection pooling + Supabase SSL config.
+#
 # pool_size:    persistent connections kept open
 # max_overflow: extra connections allowed above pool_size
 # pool_timeout: seconds to wait for a connection before raising
-# pool_recycle: recycle connections after this many seconds (avoids stale connections)
+# pool_recycle: recycle after this many seconds (avoids stale/idle-timeout drops)
+# connect_args: sslmode=require is mandatory for Supabase; safe for any
+#               PostgreSQL provider that supports SSL (Render, Neon, etc.)
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_size":    5,
     "max_overflow": 10,
     "pool_timeout": 30,
     "pool_recycle": 1800,
+    "connect_args": {
+        "sslmode": "require",
+    },
 }
 
 # Secure session cookies
@@ -791,10 +798,18 @@ def _run_migrations():
             "ON bus_details (bus_route)"
         ),
         (
-            # Change 8: composite index on onboard table
+            # Composite index on onboard table — covers filter_by(roll_no, bus_route)
             "idx_onboard_roll_route",
             "CREATE INDEX IF NOT EXISTS idx_onboard_roll_route "
             "ON onboard (roll_no, bus_route)"
+        ),
+        (
+            # Performance index on bus_location.route (single-column).
+            # Accelerates /location upsert lookup and /get_locations filter.
+            # Supabase/PostgreSQL uses this for row-level scans on active routes.
+            "idx_bus_location_route",
+            "CREATE INDEX IF NOT EXISTS idx_bus_location_route "
+            "ON bus_location (route)"
         ),
     ]
 
@@ -832,6 +847,38 @@ def _run_migrations():
         except Exception as e:
             db.session.rollback()
             logger.error("[migration] ❌ failed to create index '%s': %s", index_name, e)
+
+    # ── Part C: enforce critical constraints ─────────────────────────
+    #
+    # Ensure bus_location.route is NOT NULL.
+    # The column is declared nullable=False in the model, but pre-existing
+    # rows created before this constraint was enforced may contain NULLs.
+    # This cleans them up and then sets the column constraint directly in
+    # PostgreSQL — safe to run repeatedly (SET NOT NULL is idempotent when
+    # the constraint already exists, and the DELETE is a no-op when no NULLs
+    # are present).
+    #
+    # Why route must be NOT NULL:
+    #   /location upsert uses filter_by(route=route) — a NULL route row
+    #   would never match, accumulate silently, and corrupt tracking state.
+    if inspector.has_table("bus_location"):
+        try:
+            # Remove any null-route rows (safety net before enforcing constraint)
+            db.session.execute(text(
+                "DELETE FROM bus_location WHERE route IS NULL"
+            ))
+            db.session.commit()
+
+            # Enforce NOT NULL at DB level (idempotent — no-op if already set)
+            db.session.execute(text(
+                "ALTER TABLE bus_location "
+                "ALTER COLUMN route SET NOT NULL"
+            ))
+            db.session.commit()
+            logger.info("[migration] ✅ bus_location.route NOT NULL constraint enforced")
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("[migration] bus_location.route constraint (non-fatal): %s", e)
 
     logger.info("[migration] ── migration check complete ──")
 
